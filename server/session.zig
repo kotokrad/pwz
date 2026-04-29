@@ -1,7 +1,11 @@
 const std = @import("std");
 const Io = std.Io;
 const print = std.debug.print;
+const HmacMd5 = std.crypto.auth.hmac.HmacMd5;
 
+const Rc4 = @import("utils/rc4.zig").Rc4;
+const Rc4Writer = @import("utils/rc4.zig").Rc4Writer;
+const Rc4Reader = @import("utils/rc4.zig").Rc4Reader;
 const packets = @import("../protocol/packets.zig");
 const InPacket = packets.InPacket;
 const OutPacket = packets.OutPacket;
@@ -54,6 +58,20 @@ pub const Session = struct {
     pub fn enqueuePacket(self: Session, packet: OutPacket) !void {
         try self.outbox.append(self.scratch, packet);
     }
+
+    pub fn enableDecryption(self: *Session, username: []u8, hash: [16]u8, sm_key: [16]u8) !void {
+        const buf = try self.arena.alloc(u8, 64);
+        const rc4 = try self.arena.create(Rc4);
+        var hmac: HmacMd5 = .init(username);
+        hmac.update(&hash ++ &sm_key);
+        var key: [16]u8 = undefined;
+        hmac.final(&key);
+
+        rc4.* = .init(key);
+        var decryptor = try self.arena.create(Rc4Reader);
+        decryptor.* = .init(self.reader, rc4, buf);
+        self.decryptor = &decryptor.reader;
+    }
 };
 
 pub fn start(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream) void {
@@ -90,7 +108,7 @@ fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream) !void {
     while (true) {
         defer _ = scratch.reset(.retain_capacity);
         print("parsing\n", .{});
-        var packet_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        var packet_arena = std.heap.ArenaAllocator.init(gpa);
         errdefer packet_arena.deinit();
 
         const reader = session.decryptor orelse session.reader;

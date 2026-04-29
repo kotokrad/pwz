@@ -42,11 +42,10 @@ pub fn sendChallenge(session: *Session) !void {
         .exp_multiplier = 0,
     };
 
-    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer scratch.deinit();
+    // Saving serialized challenge_data - it's used to hash the auth creds
     var buf: [17]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
-    try codec.serialize(ChallengeData, &writer, challenge_data, scratch.allocator());
+    try codec.serialize(ChallengeData, &writer, challenge_data, session.scratch);
     session.login.challenge = buf;
 
     try session.sendPacket(.{ .Challenge = challenge });
@@ -55,13 +54,15 @@ pub fn sendChallenge(session: *Session) !void {
 fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     const valid_username = "qwer";
     const valid_password = "qwer";
-    var hmac = HmacMd5.init(&Md5.hashResult(valid_username ++ valid_password));
+    var hmac: HmacMd5 = .init(&Md5.hashResult(valid_username ++ valid_password));
     hmac.update(&session.login.challenge.?);
-    var hash: [16]u8 = undefined;
-    hmac.final(&hash);
-    session.login.hash = hash;
+    var valid_hash: [16]u8 = undefined;
+    hmac.final(&valid_hash);
 
-    if (!std.mem.eql(u8, &payload.hash.value, &hash)) {
+    session.login.hash = payload.hash.value;
+    session.login.username = payload.username;
+
+    if (!std.mem.eql(u8, &payload.hash.value, &valid_hash)) {
         const server_error = ServerError{
             .code = ErrorCode.invalid_credentials,
             .message = "Yoyoyo",
@@ -70,13 +71,18 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
         return;
     }
 
+    const sm_key: [16]u8 = @splat(69);
+    try session.enableDecryption(payload.username, payload.hash.value, sm_key);
+
+    // TODO: enable compression using MPPC
+
     const key_exchange = KeyExchange{
-        .key = .init(@splat(69)),
+        .key = .init(sm_key),
     };
     codec.debug(key_exchange);
     try session.enqueuePacket(.{ .KeyExchange = key_exchange });
 
     print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
     print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
-    print("debug: [Auth] valid hash  {x}\n", .{hash});
+    print("debug: [Auth] valid hash  {x}\n", .{valid_hash});
 }

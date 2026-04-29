@@ -9,14 +9,14 @@ const shortTypeName = codec.shortTypeName;
 
 pub const InPacket = union(enum(usize)) {
     // zig fmt: off
-    LoginRequest: LoginRequest = 0x03,
     KeepAlive: KeepAlive       = 0x5A,
+    LoginRequest: LoginRequest = 0x03,
     KeyExchange: KeyExchange   = 0x02,
     // zig fmt: on
 
     pub fn read(reader: *Io.Reader, arena: std.mem.Allocator) !InPacket {
         const peek = try reader.peekGreedy(1);
-        print("PEEK: {X}\n", .{peek});
+        // print("PEEK: {X}\n", .{peek});
         var pr = Io.Reader.fixed(peek);
         const opcode = try codec.readCuint(&pr);
         const len = try codec.readCuint(&pr);
@@ -30,26 +30,23 @@ pub const InPacket = union(enum(usize)) {
                 }
                 const payload = try codec.deserialize(T, &pr, arena);
                 reader.toss(total_len);
+
                 print("0x{x:0>4}: <= {s}\n", .{ opcode, shortTypeName(T) });
                 return @unionInit(InPacket, shortTypeName(T), payload);
             }
         }
-        print("0x{x:0>4}: <= UNKNOWN OPCODE\n", .{opcode});
-
-        // C8BE05662BAAE987ABD3F35721CB778129C66BA7
-        // C8BE05A6A2347D988B50A04CB35E045F8A59D3A7
-
-        // print("LEFT: {X}", .{reader.buffer});
         reader.toss(total_len);
+
+        print("0x{x:0>4}: <= UNKNOWN OPCODE\n", .{opcode});
         return error.UnknownOpcode;
     }
 };
 
 pub const OutPacket = union(enum(usize)) {
     // zig fmt: off
-    Challenge: Challenge     = 0x01,
-    ServerError: ServerError = 0x05,
     KeepAlive: KeepAlive     = 0x5A,
+    ServerError: ServerError = 0x05,
+    Challenge: Challenge     = 0x01,
     KeyExchange: KeyExchange = 0x02,
     // zig fmt: on
 
@@ -133,7 +130,7 @@ pub const ServerFlags = packed struct(u16) {
     is_money_bonus: bool = false,
     is_drop_bonus: bool = false,
     is_spirit_bonus: bool = false,
-    unk4: u3 = 0,
+    unk1: u3 = 0,
     is_pvp: bool = false,
     unk2: u8 = 0,
 };
