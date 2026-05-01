@@ -1,9 +1,7 @@
 const std = @import("std");
-const Io = std.Io;
 const print = std.debug.print;
-const HmacMd5 = std.crypto.auth.hmac.HmacMd5;
+const Io = std.Io;
 
-const Rc4 = @import("utils/rc4.zig").Rc4;
 const Rc4Writer = @import("utils/rc4.zig").Rc4Writer;
 const Rc4Reader = @import("utils/rc4.zig").Rc4Reader;
 const packets = @import("../protocol/packets.zig");
@@ -60,17 +58,25 @@ pub const Session = struct {
     }
 
     pub fn enableDecryption(self: *Session, username: []u8, hash: [16]u8, sm_key: [16]u8) !void {
-        const buf = try self.arena.alloc(u8, 64);
-        const rc4 = try self.arena.create(Rc4);
-        var hmac: HmacMd5 = .init(username);
-        hmac.update(&hash ++ &sm_key);
-        var key: [16]u8 = undefined;
-        hmac.final(&key);
-
-        rc4.* = .init(key);
+        const buf = try self.arena.alloc(u8, 4096);
         var decryptor = try self.arena.create(Rc4Reader);
-        decryptor.* = .init(self.reader, rc4, buf);
+        decryptor.* = .init(self.reader, buf, .{
+            .username = username,
+            .hash = hash,
+            .key = sm_key,
+        });
         self.decryptor = &decryptor.reader;
+    }
+
+    pub fn enableEncryption(self: *Session, username: []const u8, hash: [16]u8, cm_key: [16]u8) !void {
+        const buf = try self.arena.alloc(u8, 4096);
+        var encryptor = try self.arena.create(Rc4Writer);
+        encryptor.* = .init(self.writer, buf, .{
+            .username = username,
+            .hash = hash,
+            .key = cm_key,
+        });
+        self.encryptor = &encryptor.writer;
     }
 };
 

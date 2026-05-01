@@ -3,20 +3,36 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 const Writer = std.Io.Writer;
 const Reader = std.Io.Reader;
+const HmacMd5 = std.crypto.auth.hmac.HmacMd5;
+
+const KeyInputs = struct {
+    username: []const u8,
+    hash: [16]u8,
+    key: [16]u8,
+};
+
+pub fn generate_key(inputs: KeyInputs) [16]u8 {
+    var hmac: HmacMd5 = .init(inputs.username);
+    hmac.update(&inputs.hash ++ &inputs.key);
+    var key: [16]u8 = undefined;
+    hmac.final(&key);
+    return key;
+}
 
 pub const Rc4Writer = struct {
     writer: Writer,
     out: *Writer,
-    rc4: *Rc4,
+    rc4: Rc4,
 
     pub fn init(
         out: *Writer,
-        rc4: *Rc4,
         buffer: []u8,
+        inputs: KeyInputs,
     ) @This() {
+        const cm_key = generate_key(inputs);
         return .{
             .out = out,
-            .rc4 = rc4,
+            .rc4 = .init(cm_key),
             .writer = .{
                 .buffer = buffer,
                 .vtable = &.{ .drain = @This().drain },
@@ -25,13 +41,15 @@ pub const Rc4Writer = struct {
     }
 
     fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
-        _ = splat;
         const this: *@This() = @alignCast(@fieldParentPtr("writer", w));
+        _ = splat;
 
         const buffered = w.buffered();
+        // print("Compressed: {X}\n", .{buffered});
         this.rc4.processSlice(buffered);
         _ = try this.out.write(buffered);
         try this.out.flush();
+        // print("Encrypted:  {X}\n", .{buffered});
         _ = w.consumeAll();
 
         var buf: [128]u8 = undefined;
@@ -48,16 +66,17 @@ pub const Rc4Writer = struct {
 pub const Rc4Reader = struct {
     reader: Reader,
     in: *Reader,
-    rc4: *Rc4,
+    rc4: Rc4,
 
     pub fn init(
         in: *Reader,
-        rc4: *Rc4,
         buffer: []u8,
+        inputs: KeyInputs,
     ) @This() {
+        const sm_key = generate_key(inputs);
         return .{
             .in = in,
-            .rc4 = rc4,
+            .rc4 = .init(sm_key),
             .reader = .{
                 .buffer = buffer,
                 .end = 0,
