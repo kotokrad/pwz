@@ -13,10 +13,12 @@ const Challenge = packets.Challenge;
 const ChallengeData = packets.ChallengeData;
 const LoginRequest = packets.LoginRequest;
 const KeyExchange = packets.KeyExchange;
+const OnlineAnnounce = packets.OnlineAnnounce;
 
 pub fn handleAuth(session: *Session, packet: InPacket) !void {
     switch (packet) {
         .LoginRequest => |payload| try handleLoginRequest(session, payload),
+        .KeyExchange => |payload| try handleKeyExchange(session, payload),
         else => {
             print("ERROR: [Auth] Unexpected packet {any}\n", .{packet});
             return error.UnexpectedPacket;
@@ -72,17 +74,33 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     }
 
     const sm_key: [16]u8 = @splat(69);
+    session.login.account_id = 0xEFBE3713;
+    session.login.session_id = 0xEFBEADDE;
+
     try session.enableDecryption(payload.username, payload.hash.value, sm_key);
 
-    // TODO: enable compression using MPPC
-
-    const key_exchange = KeyExchange{
-        .key = .init(sm_key),
-    };
-    codec.debug(key_exchange);
+    const key_exchange = KeyExchange{ .key = .init(sm_key) };
     try session.enqueuePacket(.{ .KeyExchange = key_exchange });
 
     print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
     print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
     print("debug: [Auth] valid hash  {x}\n", .{valid_hash});
+}
+
+fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
+    try session.enableEncryption(session.login.username.?, session.login.hash.?, payload.key.value);
+    try session.enableCompression();
+
+    const online_announce = OnlineAnnounce{
+        .account_id = session.login.account_id.?,
+        .session_id = session.login.session_id.?,
+        .time_remaining = 0,
+        .zone_id = 0x01,
+        .free_time_left = 0,
+        .free_time_end = 0xFFFFFFFF,
+        .create_time = 0,
+        .referrer_flag = 0,
+    };
+    try session.enqueuePacket(.{ .OnlineAnnounce = online_announce });
+    session.stage = .CharSelect;
 }

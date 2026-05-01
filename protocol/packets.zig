@@ -44,10 +44,11 @@ pub const InPacket = union(enum(usize)) {
 
 pub const OutPacket = union(enum(usize)) {
     // zig fmt: off
-    KeepAlive: KeepAlive     = 0x5A,
-    ServerError: ServerError = 0x05,
-    Challenge: Challenge     = 0x01,
-    KeyExchange: KeyExchange = 0x02,
+    KeepAlive: KeepAlive           = 0x5A,
+    ServerError: ServerError       = 0x05,
+    Challenge: Challenge           = 0x01,
+    KeyExchange: KeyExchange       = 0x02,
+    OnlineAnnounce: OnlineAnnounce = 0x04,
     // zig fmt: on
 
     pub fn write(self: OutPacket, writer: *Io.Writer, arena: std.mem.Allocator) !void {
@@ -68,6 +69,8 @@ pub const OutPacket = union(enum(usize)) {
                 try codec.writeCuint(writer, opcode);
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
+
+                print("0x{x:0>4}: => {s}\n", .{ opcode, shortTypeName(T) });
             },
         }
     }
@@ -159,4 +162,18 @@ pub const LoginRequest = struct {
 pub const KeyExchange = struct {
     key: Octets([16]u8),
     null: u8 = 0,
+};
+
+pub const OnlineAnnounce = struct {
+    account_id: u32,
+    session_id: u32,
+    time_remaining: u32,
+    zone_id: u8,
+    free_time_left: u32,
+    free_time_end: u32,
+    create_time: u32,
+    referrer_flag: u8,
+    // passwd_flag: u8, // NOTE: (1.4.5+) passwd_flag (using old password? Or need to update password?)
+    // usbbind: u8, // NOTE: (1.4.5+)
+
 };

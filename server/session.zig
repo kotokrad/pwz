@@ -9,8 +9,6 @@ const MppcWriter = @import("utils/mppc.zig").MppcWriter;
 const packets = @import("../protocol/packets.zig");
 const InPacket = packets.InPacket;
 const OutPacket = packets.OutPacket;
-const ServerError = packets.ServerError;
-const ErrorCode = packets.ErrorCode;
 const handleAuth = @import("./handlers/auth.zig").handleAuth;
 const sendChallenge = @import("./handlers/auth.zig").sendChallenge;
 
@@ -44,15 +42,16 @@ pub const Session = struct {
     pub fn sendPendingPackets(self: Session) !void {
         const writer = self.compressor orelse self.writer;
         for (self.outbox.items) |packet| {
-            try packet.write(self.writer, self.scratch);
+            try packet.write(writer, self.scratch);
+            // TODO: use ring buffer or something
+            _ = self.outbox.orderedRemove(0);
         }
         try writer.flush();
     }
 
     pub fn sendPacket(self: Session, packet: OutPacket) !void {
-        const writer = self.encryptor orelse self.compressor orelse self.writer;
-        try packet.write(writer, self.scratch);
-        try writer.flush();
+        try packet.write(self.writer, self.scratch);
+        try self.writer.flush();
     }
 
     pub fn enqueuePacket(self: Session, packet: OutPacket) !void {
