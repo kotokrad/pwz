@@ -1,9 +1,11 @@
 const std = @import("std");
 const print = std.debug.print;
+const assert = std.debug.assert;
 const Io = std.Io;
 
 const Rc4Writer = @import("utils/rc4.zig").Rc4Writer;
 const Rc4Reader = @import("utils/rc4.zig").Rc4Reader;
+const MppcWriter = @import("utils/mppc.zig").MppcWriter;
 const packets = @import("../protocol/packets.zig");
 const InPacket = packets.InPacket;
 const OutPacket = packets.OutPacket;
@@ -40,7 +42,7 @@ pub const Session = struct {
     outbox: *std.ArrayList(OutPacket),
 
     pub fn sendPendingPackets(self: Session) !void {
-        const writer = self.encryptor orelse self.compressor orelse self.writer;
+        const writer = self.compressor orelse self.writer;
         for (self.outbox.items) |packet| {
             try packet.write(self.writer, self.scratch);
         }
@@ -77,6 +79,15 @@ pub const Session = struct {
             .key = cm_key,
         });
         self.encryptor = &encryptor.writer;
+    }
+
+    pub fn enableCompression(self: *Session) !void {
+        // The buffer should be large enough to fit one packet
+        const buf = try self.arena.alloc(u8, 4096);
+        var compressor = try self.arena.create(MppcWriter);
+        assert(self.encryptor != null);
+        compressor.* = .init(self.encryptor.?, buf);
+        self.compressor = &compressor.writer;
     }
 };
 
