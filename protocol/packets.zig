@@ -7,11 +7,11 @@ const Octets = codec.Octets;
 const UTF16String = codec.UTF16String;
 const shortTypeName = codec.shortTypeName;
 
-pub const InPacket = union(enum(usize)) {
+pub const InPacket = union(enum(u16)) {
     // zig fmt: off
-    KeepAlive: KeepAlive       = 0x5A,
-    LoginRequest: LoginRequest = 0x03,
-    KeyExchange: KeyExchange   = 0x02,
+    keep_alive: KeepAlive       = 0x5A,
+    login_request: LoginRequest = 0x03,
+    key_exchange: KeyExchange   = 0x02,
     // zig fmt: on
 
     pub fn read(reader: *Io.Reader, arena: std.mem.Allocator) !InPacket {
@@ -25,14 +25,14 @@ pub const InPacket = union(enum(usize)) {
             if (field.value == opcode) {
                 const T = @FieldType(InPacket, field.name);
                 if (pr.bufferedLen() < len) {
-                    print("ERROR: not enough bytes to parse packet {s} ({}/{})\n", .{ shortTypeName(T), peek.len, len });
+                    print("ERROR: not enough bytes to parse packet {s} ({}/{})\n", .{ field.name, peek.len, len });
                     return error.EndOfZdream;
                 }
                 const payload = try codec.deserialize(T, &pr, arena);
                 reader.toss(total_len);
 
                 print("0x{x:0>4}: <= {s}\n", .{ opcode, shortTypeName(T) });
-                return @unionInit(InPacket, shortTypeName(T), payload);
+                return @unionInit(InPacket, field.name, payload);
             }
         }
         reader.toss(total_len);
@@ -42,13 +42,13 @@ pub const InPacket = union(enum(usize)) {
     }
 };
 
-pub const OutPacket = union(enum(usize)) {
+pub const OutPacket = union(enum(u16)) {
     // zig fmt: off
-    KeepAlive: KeepAlive           = 0x5A,
-    ServerError: ServerError       = 0x05,
-    Challenge: Challenge           = 0x01,
-    KeyExchange: KeyExchange       = 0x02,
-    OnlineAnnounce: OnlineAnnounce = 0x04,
+    keep_alive: KeepAlive           = 0x5A,
+    server_error: ServerError       = 0x05,
+    challenge: Challenge            = 0x01,
+    key_exchange: KeyExchange       = 0x02,
+    online_announce: OnlineAnnounce = 0x04,
     // zig fmt: on
 
     pub fn write(self: OutPacket, writer: *Io.Writer, arena: std.mem.Allocator) !void {
@@ -60,12 +60,9 @@ pub const OutPacket = union(enum(usize)) {
                 const T = @TypeOf(variant);
                 const opcode = @intFromEnum(tag);
 
-                // print("debug: Serializing packet {s}\n", .{@typeName(T)});
                 try codec.serialize(T, &aw.writer, variant, arena);
                 const payload = aw.written();
-                // print("debug: payload {x}\n", .{payload});
 
-                // print("debug: Writing packet {s} with opcode {d}\n", .{@typeName(T), opcode});
                 try codec.writeCuint(writer, opcode);
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
@@ -76,40 +73,7 @@ pub const OutPacket = union(enum(usize)) {
     }
 };
 
-// pub fn Packet(comptime T: type) type {
-//     return struct {
-//         value: T,
-//
-//         const Self = @This();
-//         fn get_opcode() usize {
-//             inline for (@typeInfo(OutPacket).@"union".fields) |field| {
-//                 if (field.type == T) {
-//                     const tag = @field(std.meta.Tag(OutPacket), field.name);
-//                     return @intFromEnum(tag);
-//                 }
-//             }
-//             @compileError(std.fmt.comptimePrint("Packet {} is not in the list", .{@typeName(T)}));
-//         }
-//
-//         pub fn write(self: Self, writer: *Io.Writer, arena: std.mem.Allocator) !void {
-//             var aw: std.Io.Writer.Allocating = .init(arena);
-//             defer aw.deinit();
-//
-//             try codec.serialize(T, &aw.writer, self.value, arena);
-//             const payload = aw.written();
-//
-//             try codec.writeCuint(writer, get_opcode());
-//             try codec.writeCuint(writer, payload.len);
-//             try writer.writeAll(payload);
-//             print("debug: Writing packet: {s}\n", .{@typeName(T)});
-//         }
-//
-//         pub fn init(value: T) Packet(T) {
-//             return .{ .value = value };
-//         }
-//     };
-// }
-
+// Packet types
 // ----------------------------------------
 pub const KeepAlive = struct {
     data: u8,

@@ -151,19 +151,18 @@ pub fn readCuint(reader: *Io.Reader) !usize {
 }
 
 pub fn serialize(comptime T: type, writer: *Io.Writer, value: T, arena: std.mem.Allocator) !void {
-    const info = @typeInfo(T);
-    switch (info) {
+    switch (@typeInfo(T)) {
         .int => {
             // print("debug: Writing {s}le: {any}\n", .{ @typeName(T), value });
             try writer.writeInt(T, value, .little);
         },
-        .@"struct" => |struct_info| {
-            if (struct_info.backing_integer) |BackingInt| {
+        .@"struct" => |info| {
+            if (info.backing_integer) |BackingInt| {
                 try writer.writeInt(BackingInt, @bitCast(value), .big);
             } else if (@hasDecl(T, "write")) {
                 try value.write(writer, arena);
             } else {
-                inline for (struct_info.fields) |f| {
+                inline for (info.fields) |f| {
                     const field = @field(value, f.name);
                     try serialize(f.type, writer, field, arena);
                 }
@@ -172,12 +171,12 @@ pub fn serialize(comptime T: type, writer: *Io.Writer, value: T, arena: std.mem.
         .array => {
             try writer.writeAll(&value);
         },
-        .@"enum" => |enum_type| {
-            try writer.writeInt(enum_type.tag_type, @intFromEnum(value), .little);
+        .@"enum" => |info| {
+            try writer.writeInt(info.tag_type, @intFromEnum(value), .little);
         },
-        .pointer => |pointer_info| switch (pointer_info.size) {
+        .pointer => |info| switch (info.size) {
             .slice => {
-                const len = value.len * @sizeOf(pointer_info.child);
+                const len = value.len * @sizeOf(info.child);
                 try writeCuint(writer, len);
                 try writer.writeAll(value);
             },
@@ -188,43 +187,42 @@ pub fn serialize(comptime T: type, writer: *Io.Writer, value: T, arena: std.mem.
 }
 
 pub fn deserialize(comptime T: type, reader: *Io.Reader, arena: std.mem.Allocator) !T {
-    const info = @typeInfo(T);
-    switch (info) {
+    switch (@typeInfo(T)) {
         .int => {
             // print("debug: Reading {s}le\n", .{@typeName(T)});
             return try reader.takeInt(T, .little);
         },
-        .@"struct" => |struct_info| {
-            if (struct_info.backing_integer) |BackingInt| {
+        .@"struct" => |info| {
+            if (info.backing_integer) |BackingInt| {
                 const int = try reader.takeInt(BackingInt, .big);
                 return @bitCast(int);
             } else if (@hasDecl(T, "read")) {
                 return try T.read(reader, arena);
             } else {
                 var result: T = undefined;
-                inline for (struct_info.fields) |f| {
+                inline for (info.fields) |f| {
                     @field(result, f.name) = try deserialize(f.type, reader, arena);
                 }
                 return result;
             }
         },
-        .array => |array_info| {
+        .array => |info| {
             var result: T = std.mem.zeroes(T);
-            if (array_info.child == u8) {
-                const ptr = try reader.takeArray(array_info.len);
+            if (info.child == u8) {
+                const ptr = try reader.takeArray(info.len);
                 result = ptr.*;
             } else {
-                for (0..array_info.len) |i| {
-                    result[i] = try deserialize(array_info.child, reader, arena);
+                for (0..info.len) |i| {
+                    result[i] = try deserialize(info.child, reader, arena);
                 }
             }
             return result;
         },
-        .@"enum" => |enum_info| {
-            const int = try reader.takeInt(enum_info.tag_type, .little);
+        .@"enum" => |info| {
+            const int = try reader.takeInt(info.tag_type, .little);
             return @enumFromInt(int);
         },
-        .pointer => |pointer_info| switch (pointer_info.size) {
+        .pointer => |info| switch (info.size) {
             .slice => {
                 const len = try readCuint(reader);
                 const buf = try reader.take(len);

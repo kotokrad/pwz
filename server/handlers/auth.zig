@@ -17,8 +17,8 @@ const OnlineAnnounce = packets.OnlineAnnounce;
 
 pub fn handleAuth(session: *Session, packet: InPacket) !void {
     switch (packet) {
-        .LoginRequest => |payload| try handleLoginRequest(session, payload),
-        .KeyExchange => |payload| try handleKeyExchange(session, payload),
+        .login_request => |payload| try handleLoginRequest(session, payload),
+        .key_exchange => |payload| try handleKeyExchange(session, payload),
         else => {
             print("ERROR: [Auth] Unexpected packet {any}\n", .{packet});
             return error.UnexpectedPacket;
@@ -44,13 +44,14 @@ pub fn sendChallenge(session: *Session) !void {
         .exp_multiplier = 0,
     };
 
-    // Saving serialized challenge_data - it's used to hash the auth creds
+    // Saving serialized challenge_data
+    // it will be used to hash the auth creds
     var buf: [17]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
     try codec.serialize(ChallengeData, &writer, challenge_data, session.scratch);
     session.login.challenge = buf;
 
-    try session.sendPacket(.{ .Challenge = challenge });
+    try session.sendPacket(.{ .challenge = challenge });
 }
 
 fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
@@ -69,7 +70,7 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
             .code = ErrorCode.invalid_credentials,
             .message = "Yoyoyo",
         };
-        try session.enqueuePacket(.{ .ServerError = server_error });
+        try session.enqueuePacket(.{ .server_error = server_error });
         return;
     }
 
@@ -80,7 +81,7 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     try session.enableDecryption(payload.username, payload.hash.value, sm_key);
 
     const key_exchange = KeyExchange{ .key = .init(sm_key) };
-    try session.enqueuePacket(.{ .KeyExchange = key_exchange });
+    try session.enqueuePacket(.{ .key_exchange = key_exchange });
 
     print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
     print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
@@ -101,6 +102,6 @@ fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
         .create_time = 0,
         .referrer_flag = 0,
     };
-    try session.enqueuePacket(.{ .OnlineAnnounce = online_announce });
-    session.stage = .CharSelect;
+    try session.enqueuePacket(.{ .online_announce = online_announce });
+    session.stage = .char_select;
 }

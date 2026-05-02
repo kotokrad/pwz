@@ -13,9 +13,9 @@ const handleAuth = @import("./handlers/auth.zig").handleAuth;
 const sendChallenge = @import("./handlers/auth.zig").sendChallenge;
 
 const Stage = union(enum) {
-    Auth,
-    CharSelect,
-    InWorld,
+    auth,
+    char_select,
+    in_world,
 };
 
 const LoginState = struct {
@@ -114,7 +114,7 @@ fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream) !void {
         .gpa = gpa,
         .arena = arena.allocator(),
         .scratch = scratch.allocator(),
-        .stage = .Auth,
+        .stage = .auth,
         .reader = &stream_reader.interface,
         .writer = &stream_writer.interface,
         .outbox = &outbox,
@@ -139,23 +139,24 @@ fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream) !void {
 
         // Handle global packets
         switch (packet) {
-            .KeepAlive => {
+            .keep_alive => {
                 defer packet_arena.deinit();
-                try session.sendPacket(.{ .KeepAlive = .{ .data = 0xf0 } });
+                try session.sendPacket(.{ .keep_alive = .{ .data = 0xf0 } });
                 continue;
             },
             else => {},
         }
 
         switch (session.stage) {
-            .Auth => {
+            .auth => {
                 defer packet_arena.deinit();
                 try handleAuth(&session, packet);
             },
-            .CharSelect => {
+            .char_select => {
                 defer packet_arena.deinit();
+                // TODO: handleCharSelect
             },
-            .InWorld => {},
+            .in_world => {},
         }
 
         print("sending\n", .{});
