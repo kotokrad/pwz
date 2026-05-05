@@ -9,15 +9,7 @@ const character = @import("../world/character.zig");
 
 const EndianTable = utils.EndianTable;
 const UTF16String = codec.UTF16String;
-
-fn copyMatchingFields(comptime F: type, comptime T: type, from: F) T {
-    const to_info = @typeInfo(T);
-    var result: T = undefined;
-    inline for (to_info.@"struct".fields) |f| {
-        @field(result, f.name) = @field(from, f.name);
-    }
-    return result;
-}
+const copyMatchingFields = utils.copyMatchingFields;
 
 pub const ErrorCode = enum(u8) {
     // zig fmt: off
@@ -80,6 +72,10 @@ pub const RoleInfo = struct {
     };
 
     pub fn from(char: character.Character) RoleInfo {
-        return copyMatchingFields(character.Character, RoleInfo, char);
+        return copyMatchingFields(character.Character, RoleInfo, char, .{
+            .level = char.level,
+            .cultivation = char.cultivation,
+            .name = .init(char.name),
+        });
     }
 };
