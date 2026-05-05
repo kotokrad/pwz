@@ -2,7 +2,7 @@
 // Spec: https://datatracker.ietf.org/doc/html/rfc2118
 // Differences:
 // - no header, no flags, no coherency count
-// - byte alignment flag (1111 000000) at the end of the packet
+// - byte alignment flag (1111 000000) at the end of each packet
 
 const std = @import("std");
 const print = std.debug.print;
@@ -93,11 +93,7 @@ pub const Mppc = struct {
         while (true) {
             if (self.cur < 3 or data.len - start < 3) break;
             if (std.mem.findPos(u8, self.hist[0..self.cur], last_pos, data[start .. start + 3])) |pos| {
-                const len = if (std.mem.findDiff(u8, self.hist[pos..], data[start..])) |len| blk: {
-                    break :blk len;
-                } else blk: {
-                    break :blk data.len - start;
-                };
+                const len = std.mem.findDiff(u8, self.hist[pos..], data[start..]) orelse data.len - start;
 
                 if (match == null or match.?.len <= len) {
                     match = .{ .offset = @intCast(self.cur - pos), .len = @intCast(len) };
@@ -171,37 +167,37 @@ pub const BitStream = struct {
         // Write length-of-match
         if (len == 3) {
             try self.writeBits(0, 1);
-        } else if (len < 7) {
+        } else if (len <= 7) {
             try self.writeBits(0b10, 2);
             try self.writeBits(len, 2);
-        } else if (len < 15) {
+        } else if (len <= 15) {
             try self.writeBits(0b110, 3);
             try self.writeBits(len, 3);
-        } else if (len < 31) {
+        } else if (len <= 31) {
             try self.writeBits(0b1110, 4);
             try self.writeBits(len, 4);
-        } else if (len < 63) {
+        } else if (len <= 63) {
             try self.writeBits(0b11110, 5);
             try self.writeBits(len, 5);
-        } else if (len < 127) {
+        } else if (len <= 127) {
             try self.writeBits(0b111110, 6);
             try self.writeBits(len, 6);
-        } else if (len < 255) {
+        } else if (len <= 255) {
             try self.writeBits(0b1111110, 7);
             try self.writeBits(len, 7);
-        } else if (len < 511) {
+        } else if (len <= 511) {
             try self.writeBits(0b11111110, 8);
             try self.writeBits(len, 8);
-        } else if (len < 1023) {
+        } else if (len <= 1023) {
             try self.writeBits(0b111111110, 9);
             try self.writeBits(len, 9);
-        } else if (len < 2047) {
+        } else if (len <= 2047) {
             try self.writeBits(0b1111111110, 10);
             try self.writeBits(len, 10);
-        } else if (len < 4095) {
+        } else if (len <= 4095) {
             try self.writeBits(0b11111111110, 11);
             try self.writeBits(len, 11);
-        } else if (len < 8191) {
+        } else if (len <= 8191) {
             try self.writeBits(0b111111111110, 12);
             try self.writeBits(len, 12);
         }
