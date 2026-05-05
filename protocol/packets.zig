@@ -2,10 +2,12 @@ const std = @import("std");
 const print = std.debug.print;
 const Io = std.Io;
 
+const utils = @import("utils.zig");
 const codec = @import("codec.zig");
+const types = @import("types.zig");
+
 const Octets = codec.Octets;
 const UTF16String = codec.UTF16String;
-const shortTypeName = codec.shortTypeName;
 
 pub const InPacket = union(enum(u16)) {
     // zig fmt: off
@@ -31,7 +33,7 @@ pub const InPacket = union(enum(u16)) {
                 const payload = try codec.deserialize(T, &pr, arena);
                 reader.toss(total_len);
 
-                print("0x{x:0>4}: <= {s}\n", .{ opcode, shortTypeName(T) });
+                print("0x{x:0>4}: <= {s}\n", .{ opcode, utils.shortTypeName(T) });
                 return @unionInit(InPacket, field.name, payload);
             }
         }
@@ -67,7 +69,7 @@ pub const OutPacket = union(enum(u16)) {
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
 
-                print("0x{x:0>4}: => {s}\n", .{ opcode, shortTypeName(T) });
+                print("0x{x:0>4}: => {s}\n", .{ opcode, utils.shortTypeName(T) });
             },
         }
     }
@@ -79,43 +81,17 @@ pub const KeepAlive = struct {
     data: u8,
 };
 
-pub const ErrorCode = enum(u8) {
-    invalid_credentials = 0x03,
-    already_in_game = 0x10,
-    maintenance = 0x25,
-    server_offline = 0x28,
-    account_not_activated = 0x83,
-};
-
 pub const ServerError = struct {
-    code: ErrorCode,
+    code: types.ErrorCode,
     message: []const u8,
 };
 
-pub const ServerFlags = packed struct(u16) {
-    unk0: u1 = 0,
-    is_money_bonus: bool = false,
-    is_drop_bonus: bool = false,
-    is_spirit_bonus: bool = false,
-    unk1: u3 = 0,
-    is_pvp: bool = false,
-    unk2: u8 = 0,
-};
-
 pub const Challenge = struct {
-    data: Octets(ChallengeData),
+    data: Octets(types.ChallengeData),
     version: [4]u8,
     auth_method: u8,
     crc_signature: Octets([26]u8),
     exp_multiplier: u8,
-};
-
-pub const ChallengeData = struct {
-    server_load: u8,
-    unk1: u16 = 0,
-    flags: ServerFlags,
-    unk2: u32 = 0,
-    random_bytes: [8]u8,
 };
 
 pub const LoginRequest = struct {
