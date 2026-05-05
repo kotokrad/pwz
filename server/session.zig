@@ -9,12 +9,13 @@ const MppcWriter = @import("utils/mppc.zig").MppcWriter;
 const packets = @import("../protocol/packets.zig");
 const InPacket = packets.InPacket;
 const OutPacket = packets.OutPacket;
-const handleAuth = @import("./handlers/auth.zig").handleAuth;
-const sendChallenge = @import("./handlers/auth.zig").sendChallenge;
+const sendChallenge = @import("handlers/auth.zig").sendChallenge;
+const handleAuth = @import("handlers/auth.zig").handleAuth;
+const handleCharList = @import("handlers/char_list.zig").handleCharList;
 
 const Stage = union(enum) {
     auth,
-    char_select,
+    char_list,
     in_world,
 };
 
@@ -81,10 +82,10 @@ pub const Session = struct {
     }
 
     pub fn enableCompression(self: *Session) !void {
+        assert(self.encryptor != null);
         // The buffer should be large enough to fit one packet
         const buf = try self.arena.alloc(u8, 4096);
         var compressor = try self.arena.create(MppcWriter);
-        assert(self.encryptor != null);
         compressor.* = .init(self.encryptor.?, buf);
         self.compressor = &compressor.writer;
     }
@@ -152,9 +153,9 @@ fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream) !void {
                 defer packet_arena.deinit();
                 try handleAuth(&session, packet);
             },
-            .char_select => {
+            .char_list => {
                 defer packet_arena.deinit();
-                // TODO: handleCharSelect
+                try handleCharList(&session, packet);
             },
             .in_world => {},
         }

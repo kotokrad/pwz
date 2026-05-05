@@ -14,6 +14,8 @@ pub const InPacket = union(enum(u16)) {
     keep_alive: KeepAlive       = 0x5A,
     login_request: LoginRequest = 0x03,
     key_exchange: KeyExchange   = 0x02,
+    role_list: RoleList         = 0x52,
+    select_role: SelectRole     = 0x46,
     // zig fmt: on
 
     pub fn read(reader: *Io.Reader, arena: std.mem.Allocator) !InPacket {
@@ -51,6 +53,8 @@ pub const OutPacket = union(enum(u16)) {
     challenge: Challenge            = 0x01,
     key_exchange: KeyExchange       = 0x02,
     online_announce: OnlineAnnounce = 0x04,
+    role_list_re: RoleListRe        = 0x53,
+    select_role_re: SelectRoleRe    = 0x47,
     // zig fmt: on
 
     pub fn write(self: OutPacket, writer: *Io.Writer, arena: std.mem.Allocator) !void {
@@ -115,5 +119,26 @@ pub const OnlineAnnounce = struct {
     referrer_flag: u8,
     // passwd_flag: u8, // NOTE: (1.4.5+) passwd_flag (using old password? Or need to update password?)
     // usbbind: u8, // NOTE: (1.4.5+)
+};
 
+pub const RoleList = struct {
+    account_id: u32,
+    local_sid: u32,
+    slot: u32,
+};
+
+pub const RoleListRe = struct {
+    result: u32,
+    next_slot: u32,
+    account_id: u32,
+    session_id: u32,
+    characters: []const types.RoleInfo,
+};
+
+pub const SelectRole = struct {
+    char_id: u32,
+};
+pub const SelectRoleRe = struct {
+    zeroes: u32 = 0,
+    gm_code: [33]u8,
 };

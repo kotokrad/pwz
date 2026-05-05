@@ -36,9 +36,9 @@ pub fn sendChallenge(session: *Session) !void {
 
     const challenge = Challenge{
         .data = .init(challenge_data),
-        .version = [4]u8{ 0, 1, 4, 2 },
+        .version = .{ 0, 1, 4, 2 },
         .auth_method = 0,
-        .crc_signature = .init([26]u8{
+        .crc_signature = .init(.{
             0x33, 0x30, 0x30, 0x30, 0x30, 0x30, 0x31, 0x62, 0x34, 0x62, 0x36, 0x35, 0x39, 0x62,
             0x32, 0x65, 0x31, 0x63, 0x34, 0x61, 0x61, 0x35, 0x66, 0x39, 0x37, 0x38,
         }),
@@ -85,8 +85,8 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     try session.enqueuePacket(.{ .key_exchange = key_exchange });
 
     print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
-    print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
-    print("debug: [Auth] valid hash  {x}\n", .{valid_hash});
+    // print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
+    // print("debug: [Auth] valid hash  {x}\n", .{valid_hash});
 }
 
 fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
@@ -97,12 +97,12 @@ fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
         .account_id = session.login.account_id.?,
         .session_id = session.login.session_id.?,
         .time_remaining = 0,
-        .zone_id = 0x01,
+        .zone_id = 1,
         .free_time_left = 0,
         .free_time_end = 0xFFFFFFFF,
         .create_time = 0,
         .referrer_flag = 0,
     };
     try session.enqueuePacket(.{ .online_announce = online_announce });
-    session.stage = .char_select;
+    session.stage = .char_list;
 }
