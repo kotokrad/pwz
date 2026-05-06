@@ -9,6 +9,17 @@ const types = @import("types.zig");
 const Octets = codec.Octets;
 const UTF16String = codec.UTF16String;
 
+pub fn Owned(comptime T: type) type {
+    return struct {
+        arena: ?std.heap.ArenaAllocator = null,
+        value: T,
+
+        pub fn deinit(self: @This()) void {
+            if (self.arena) |arena| arena.deinit();
+        }
+    };
+}
+
 pub const InPacket = union(enum(u16)) {
     // zig fmt: off
     keep_alive: KeepAlive       = 0x5A,
@@ -138,6 +149,7 @@ pub const RoleListRe = struct {
 pub const SelectRole = struct {
     char_id: u32,
 };
+
 pub const SelectRoleRe = struct {
     zeroes: u32 = 0,
     gm_code: [33]u8,

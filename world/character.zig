@@ -59,7 +59,7 @@ pub const CharacterFlags = packed struct(u32) {
 
 pub const Character = struct {
     // Base
-    char_id: u32,
+    char_id: u8,
     gender: u8 = 0,
     race: u8 = 1,
     class: u8 = 1,
@@ -139,7 +139,7 @@ pub const Character = struct {
 
 pub fn getExampleChar(gpa: std.mem.Allocator) !Character {
     return .{
-        .char_id = 0xBEBAADDE,
+        .char_id = 123,
         .race = 1,
         .class = 6,
         .level = 86,

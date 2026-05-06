@@ -6,7 +6,10 @@ const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
 const character = @import("../../world/character.zig");
+const events = @import("../../world/events.zig");
 
+const Reply = events.Reply;
+const Owned = events.Owned;
 const InPacket = packets.InPacket;
 const RoleList = packets.RoleList;
 const RoleListRe = packets.RoleListRe;
@@ -27,17 +30,26 @@ pub fn handleCharList(session: *Session, packet: InPacket) !void {
 
 fn handleRoleList(session: *Session, payload: RoleList) !void {
     _ = payload;
-    const char = try character.getExampleChar(session.arena); // leaks memory
-    const char_list = try session.arena.dupe(RoleInfo, &.{RoleInfo.from(char)});
+
+    var reply: Reply(Owned([]RoleInfo)) = .{};
+    try session.actions_tx.append(.{
+        .char_list = .{
+            .ids = session.account.?.chars,
+            .reply = &reply,
+        },
+    });
+
+    const char_list = try reply.await(session.io);
+
     const role_list_re = RoleListRe{
         .result = 0,
         .next_slot = 0xFFFFFFFF,
-        .account_id = session.login.account_id.?,
-        .session_id = session.login.session_id.?,
-        .characters = char_list,
+        .account_id = session.account.?.id,
+        .session_id = session.id.?,
+        .characters = char_list.value[0..1],
     };
 
-    try session.enqueuePacket(.{ .role_list_re = role_list_re });
+    try session.enqueuePacketAlloc(char_list.arena, .{ .role_list_re = role_list_re });
 }
 
 fn handleSelectRole(session: *Session, payload: SelectRole) !void {
@@ -53,4 +65,5 @@ fn handleSelectRole(session: *Session, payload: SelectRole) !void {
     };
 
     try session.enqueuePacket(.{ .select_role_re = select_role_re });
+    session.stage = .in_world;
 }

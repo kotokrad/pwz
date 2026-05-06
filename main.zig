@@ -3,6 +3,9 @@ const net = std.Io.net;
 const Io = std.Io;
 const print = std.debug.print;
 
+const world = @import("world/world.zig");
+const Action = @import("world/events.zig").Action;
+const Channel = @import("world/events.zig").Channel;
 const session = @import("server/session.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -19,9 +22,20 @@ pub fn main(init: std.process.Init) !void {
     var group: Io.Group = .init;
     defer group.cancel(io);
 
+    var chan_back: [128]Action = undefined;
+    var chan_front: [128]Action = undefined;
+    var actions_channel: Channel(Action) = .{
+        .back = .initBuffer(&chan_back),
+        .front = .initBuffer(&chan_front),
+        .mutex = .init,
+        .io = io,
+    };
+
+    try group.concurrent(io, world.start, .{ io, gpa, &actions_channel });
+
     while (true) {
         print("INFO: Waiting for new connection...\n", .{});
         const stream = try server.accept(io);
-        try group.concurrent(io, session.start, .{ io, gpa, stream });
+        try group.concurrent(io, session.start, .{ io, gpa, stream, &actions_channel });
     }
 }

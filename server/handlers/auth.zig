@@ -7,6 +7,8 @@ const Session = @import("../session.zig").Session;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
+const Reply = @import("../../world/events.zig").Reply;
+const Account = @import("../../world/world.zig").Account;
 const InPacket = packets.InPacket;
 const ServerError = packets.ServerError;
 const ErrorCode = types.ErrorCode;
@@ -15,6 +17,13 @@ const ChallengeData = types.ChallengeData;
 const LoginRequest = packets.LoginRequest;
 const KeyExchange = packets.KeyExchange;
 const OnlineAnnounce = packets.OnlineAnnounce;
+
+fn getHmacMd5(username: []const u8, password: []const u8, challenge: [17]u8) [16]u8 {
+    var hmac: HmacMd5 = .init(&Md5.hashResult(username ++ password));
+    hmac.update(&challenge);
+    var hash: [16]u8 = undefined;
+    hmac.final(&hash);
+}
 
 pub fn handleAuth(session: *Session, packet: InPacket) !void {
     switch (packet) {
@@ -50,23 +59,31 @@ pub fn sendChallenge(session: *Session) !void {
     var buf: [17]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
     try codec.serialize(ChallengeData, &writer, challenge_data, session.scratch);
-    session.login.challenge = buf;
+    session.auth.challenge = buf;
 
     try session.sendPacket(.{ .challenge = challenge });
 }
 
 fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
-    const valid_username = "qwer";
-    const valid_password = "qwer";
-    var hmac: HmacMd5 = .init(&Md5.hashResult(valid_username ++ valid_password));
-    hmac.update(&session.login.challenge.?);
-    var valid_hash: [16]u8 = undefined;
-    hmac.final(&valid_hash);
+    session.auth.hash = payload.hash.value;
+    session.auth.username = payload.username;
 
-    session.login.hash = payload.hash.value;
-    session.login.username = payload.username;
+    var reply: Reply(?Account) = .{};
+    try session.actions_tx.append(.{
+        .auth = .{
+            // Just sending the pointer because we're waiting for reply
+            .username = session.auth.username.?,
+            .reply = &reply,
+        },
+    });
 
-    if (!std.mem.eql(u8, &payload.hash.value, &valid_hash)) {
+    const account = try reply.await(session.io);
+
+    print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
+    // print("debug: [Auth] client hash {X}\n", .{payload.hash.value});
+    // if (account) |a| print("debug: [Auth] hash for {s}: {X}\n", .{ payload.username, a.hash });
+
+    if (account == null or !std.mem.eql(u8, &payload.hash.value, &account.?.hash)) {
         const server_error = ServerError{
             .code = ErrorCode.invalid_credentials,
             .message = "Yoyoyo",
@@ -76,26 +93,33 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     }
 
     const sm_key: [16]u8 = @splat(69);
-    session.login.account_id = 0xEFBE3713;
-    session.login.session_id = 0xEFBEADDE;
+    // session.account_id = 0xEFBE3713;
+    // session.session_id = 0xEFBEADDE;
+    session.account = account;
 
     try session.enableDecryption(payload.username, payload.hash.value, sm_key);
 
     const key_exchange = KeyExchange{ .key = .init(sm_key) };
     try session.enqueuePacket(.{ .key_exchange = key_exchange });
-
-    print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
-    // print("debug: [Auth] client hash {x}\n", .{payload.hash.value});
-    // print("debug: [Auth] valid hash  {x}\n", .{valid_hash});
 }
 
 fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
-    try session.enableEncryption(session.login.username.?, session.login.hash.?, payload.key.value);
+    try session.enableEncryption(session.auth.username.?, session.auth.hash.?, payload.key.value);
     try session.enableCompression();
 
+    var reply: Reply(u8) = .{};
+    try session.actions_tx.append(.{
+        .init_session = .{
+            .channel = session.updates_rx,
+            .reply = &reply,
+        },
+    });
+    const session_id = try reply.await(session.io);
+    session.id = session_id;
+
     const online_announce = OnlineAnnounce{
-        .account_id = session.login.account_id.?,
-        .session_id = session.login.session_id.?,
+        .account_id = session.account.?.id,
+        .session_id = session_id,
         .time_remaining = 0,
         .zone_id = 1,
         .free_time_left = 0,
