@@ -9,7 +9,8 @@ const character = @import("../world/character.zig");
 
 const EndianTable = utils.EndianTable;
 const UTF16String = codec.UTF16String;
-const copyMatchingFields = utils.copyMatchingFields;
+const copyShallow = utils.copyShallow;
+const copyDeepAlloc = utils.copyDeepAlloc;
 
 pub const ErrorCode = enum(u8) {
     // zig fmt: off
@@ -71,8 +72,9 @@ pub const RoleInfo = struct {
         .cash_add = .big,
     };
 
-    pub fn from(char: character.Character) RoleInfo {
-        return copyMatchingFields(character.Character, RoleInfo, char, .{
+    pub fn from(arena: std.mem.Allocator, char: character.Character) !RoleInfo {
+        return try copyDeepAlloc(character.Character, RoleInfo, arena, char, .{
+            .char_id = char.char_id,
             .level = char.level,
             .cultivation = char.cultivation,
             .name = .init(char.name),

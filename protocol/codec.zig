@@ -46,7 +46,6 @@ pub const UTF16String = struct {
         _ = arena;
         var buf: [128]u16 = undefined;
         const len = try std.unicode.utf8ToUtf16Le(&buf, self.value);
-        // const utf16 = try std.unicode.utf8ToUtf16LeAlloc(arena, self.value);
         try writeCuint(writer, len * 2);
         try writer.writeAll(std.mem.sliceAsBytes(buf[0..len]));
     }

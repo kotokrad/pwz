@@ -76,12 +76,46 @@ fn FieldsTypeDiff(comptime F: type, comptime T: type) type {
     return @Struct(.auto, null, &field_names, &field_types, &field_attrs);
 }
 
-pub fn copyMatchingFields(comptime F: type, comptime T: type, from: F, diff: FieldsTypeDiff(F, T)) T {
+pub fn copyShallow(comptime F: type, comptime T: type, from: F, diff: FieldsTypeDiff(F, T)) T {
     const to_info = @typeInfo(T);
     var result: T = undefined;
     inline for (to_info.@"struct".fields) |f| {
         if (f.type == @FieldType(F, f.name)) {
             @field(result, f.name) = @field(from, f.name);
+        } else {
+            @field(result, f.name) = @field(diff, f.name);
+        }
+    }
+    return result;
+}
+
+// Doesn't handle every case, just enough for complex packets
+pub fn copyDeepAlloc(comptime F: type, comptime T: type, arena: std.mem.Allocator, from: F, diff: FieldsTypeDiff(F, T)) !T {
+    const to_info = @typeInfo(T);
+    var result: T = undefined;
+    inline for (to_info.@"struct".fields) |f| {
+        if (f.type == @FieldType(F, f.name)) {
+            switch (@typeInfo(f.type)) {
+                .@"struct" => {
+                    @field(result, f.name) = try copyDeepAlloc(f.type, f.type, arena, @field(from, f.name), .{});
+                },
+                .pointer => |info| {
+                    switch (@typeInfo(info.child)) {
+                        .@"struct" => {
+                            const field = @field(from, f.name);
+                            const dst = try arena.alloc(info.child, field.len);
+                            for (@field(from, f.name), 0..) |ff, i| {
+                                dst[i] = try copyDeepAlloc(info.child, info.child, arena, ff, .{});
+                            }
+                            @field(result, f.name) = dst;
+                        },
+                        else => {
+                            @field(result, f.name) = try arena.dupe(info.child, @field(from, f.name));
+                        },
+                    }
+                },
+                else => @field(result, f.name) = @field(from, f.name),
+            }
         } else {
             @field(result, f.name) = @field(diff, f.name);
         }
