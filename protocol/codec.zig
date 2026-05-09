@@ -9,10 +9,40 @@ const overrides = @import("overrides.zig");
 const shortTypeName = utils.shortTypeName;
 const getEndianFor = utils.getEndianFor;
 
+pub fn Seq(comptime T: type) type {
+    return struct {
+        list: []T,
+
+        const Self = @This();
+        pub fn write(self: Self, writer: *Writer, arena: std.mem.Allocator) !void {
+            for (self.list) |item| {
+                try serialize(T, writer, item, arena);
+            }
+        }
+
+        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Octets(T) {
+            var result: std.ArrayList(T) = .empty;
+            while (reader.seek < reader.end) {
+                print("seek = {}, end = {}\n", .{ reader.seek, reader.end });
+                result.append(arena, deserialize(T, reader, arena));
+            }
+            return .{ .value = result };
+        }
+
+        pub fn init(value: T) Octets(T) {
+            return .{ .value = value };
+        }
+    };
+}
+
 pub fn Octets(comptime T: type) type {
     return struct {
         value: T,
+
         const Self = @This();
+        pub fn init(value: T) Octets(T) {
+            return .{ .value = value };
+        }
 
         pub fn write(self: Self, writer: *Writer, arena: std.mem.Allocator) !void {
             var aw: Writer.Allocating = .init(arena);
@@ -29,10 +59,6 @@ pub fn Octets(comptime T: type) type {
             const buf = try reader.take(size);
             var buf_reader = Reader.fixed(buf);
             const value = try deserialize(T, &buf_reader, arena);
-            return .{ .value = value };
-        }
-
-        pub fn init(value: T) Octets(T) {
             return .{ .value = value };
         }
     };
@@ -71,7 +97,7 @@ pub fn writeCuint(writer: *Writer, value: usize) !void {
     } else if (value < 0x20000000) {
         const v = (value | 0xC0000000);
         try writer.writeInt(u32, @intCast(v), .big);
-    } else std.debug.panic("ERROR: CUInt overflow: value {} >= 0x20000000\n", .{value});
+    } else std.debug.panic("ERROR: [Codec] CUInt overflow: value {} >= 0x20000000\n", .{value});
 }
 
 pub fn readCuint(reader: *Reader) !usize {
@@ -82,7 +108,7 @@ pub fn readCuint(reader: *Reader) !usize {
     }
 
     bytes = try reader.peek(2);
-    if (bytes[1] < 0xC0) {
+    if (bytes[0] < 0xC0) {
         const value = try reader.takeInt(u16, .big);
         return value & 0x3FFF;
     }
@@ -91,14 +117,26 @@ pub fn readCuint(reader: *Reader) !usize {
     return value & 0x1FFFFFFF;
 }
 
+pub fn cuintSize(value: usize) usize {
+    if (value < 0x80) {
+        return 1;
+    } else if (value < 0x4000) {
+        return 2;
+    } else if (value < 0x20000000) {
+        return 4;
+    } else std.debug.panic("ERROR: [Codec] CUInt overflow: value {} >= 0x20000000\n", .{value});
+}
+
 pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.Allocator) !void {
     switch (@typeInfo(T)) {
         .int => {
             try writer.writeInt(T, value, .little);
         },
         .float => {
-            const F = std.meta.Int(.unsigned, @bitSizeOf(T));
-            try writer.writeInt(F, @bitCast(value), .little);
+            if (T != f32) {
+                @compileError("Float type " ++ @typeName(T) ++ " is not writable, only f32 are supported");
+            }
+            try writer.writeInt(u32, @bitCast(value * 16777216.0), .little);
         },
         .bool => {
             try writer.writeByte(if (value) 1 else 0);
@@ -135,6 +173,11 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.All
         .@"enum" => |info| {
             try writer.writeInt(info.tag_type, @intFromEnum(value), .little);
         },
+        .@"union" => {
+            if (@hasDecl(T, "write")) {
+                try value.write(writer, arena);
+            } else @compileError("Union type is not writable: " ++ @typeName(T));
+        },
         .pointer => |info| switch (info.size) {
             .slice => {
                 try writeCuint(writer, value.len);
@@ -156,8 +199,10 @@ pub fn deserialize(comptime T: type, reader: *Reader, arena: std.mem.Allocator) 
             return try reader.takeInt(T, .little);
         },
         .float => {
-            const F = std.meta.Int(.unsigned, @bitSizeOf(T));
-            return @bitCast(try reader.takeFloat(F, .little));
+            if (T != f32) {
+                @compileError("Float type " ++ @typeName(T) ++ " is not readable, only f32 are supported");
+            }
+            return @as(f32, @bitCast(try reader.takeInt(u32, .little))) / 16777216.0;
         },
         .bool => {
             return try reader.takeByte() == 1;
@@ -203,6 +248,11 @@ pub fn deserialize(comptime T: type, reader: *Reader, arena: std.mem.Allocator) 
         .@"enum" => |info| {
             const int = try reader.takeInt(info.tag_type, .little);
             return @enumFromInt(int);
+        },
+        .@"union" => {
+            if (@hasDecl(T, "read")) {
+                return try T.read(reader, arena);
+            } else @compileError("Union type is not readable: " ++ @typeName(T));
         },
         .pointer => |info| switch (info.size) {
             .slice => {
