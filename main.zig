@@ -4,9 +4,12 @@ const Io = std.Io;
 const print = std.debug.print;
 
 const world = @import("world/world.zig");
-const Action = @import("world/events.zig").Action;
-const Channel = @import("world/events.zig").Channel;
 const session = @import("server/session.zig");
+const events = @import("events/events.zig");
+
+const Channel = events.Channel;
+const Message = events.Message;
+const Action = events.Action;
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -16,26 +19,24 @@ pub fn main(init: std.process.Init) !void {
 
     const address = try net.IpAddress.parse("127.0.0.1", 29000);
     var server = try address.listen(io, .{ .reuse_address = true });
-    print("INFO: Listening on {f}\n", .{address});
+    print("INFO: [Server] Listening on {f}\n", .{address});
     defer server.deinit(io);
 
     var group: Io.Group = .init;
     defer group.cancel(io);
 
-    var chan_back: [128]Action = undefined;
-    var chan_front: [128]Action = undefined;
-    var actions_channel: Channel(Action) = .{
-        .back = .initBuffer(&chan_back),
-        .front = .initBuffer(&chan_front),
-        .mutex = .init,
-        .io = io,
-    };
+    var actions_back: [128]Action = undefined;
+    var actions_front: [128]Action = undefined;
+    var actions_channel: Channel(Action) = .init(io, &actions_back, &actions_front);
+    var messages_back: [128]Message = undefined;
+    var messages_front: [128]Message = undefined;
+    var messages_channel: Channel(Message) = .init(io, &messages_back, &messages_front);
 
-    try group.concurrent(io, world.start, .{ io, gpa, &actions_channel });
+    try group.concurrent(io, world.start, .{ io, gpa, &messages_channel, &actions_channel });
 
     while (true) {
-        print("INFO: Waiting for new connection...\n", .{});
+        print("INFO: [Server] Waiting for new connection...\n", .{});
         const stream = try server.accept(io);
-        try group.concurrent(io, session.start, .{ io, gpa, stream, &actions_channel });
+        try group.concurrent(io, session.start, .{ io, gpa, stream, &messages_channel, &actions_channel });
     }
 }

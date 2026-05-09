@@ -3,19 +3,24 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 const Io = std.Io;
 
+const events = @import("../events/events.zig");
 const Rc4Writer = @import("utils/rc4.zig").Rc4Writer;
 const Rc4Reader = @import("utils/rc4.zig").Rc4Reader;
 const MppcWriter = @import("utils/mppc.zig").MppcWriter;
 const InPacket = @import("../protocol/packets.zig").InPacket;
 const OutPacket = @import("../protocol/packets.zig").OutPacket;
-const Channel = @import("../world/events.zig").Channel;
-const Action = @import("../world/events.zig").Action;
-const Update = @import("../world/events.zig").Update;
+const Container = @import("../protocol/packets.zig").Container;
 const Account = @import("../world/world.zig").Account;
 const Owned = @import("../protocol/packets.zig").Owned;
 const sendChallenge = @import("handlers/auth.zig").sendChallenge;
 const handleAuth = @import("handlers/auth.zig").handleAuth;
 const handleCharList = @import("handlers/char_list.zig").handleCharList;
+const handleInWorld = @import("handlers/in_world.zig").handleInWorld;
+
+const Channel = events.Channel;
+const Message = events.Message;
+const Action = events.Action;
+const Update = events.Update;
 
 const Stage = union(enum) {
     auth,
@@ -35,6 +40,7 @@ pub const Session = struct {
     gpa: std.mem.Allocator,
     arena: std.mem.Allocator, // Lives the whole session
     scratch: std.mem.Allocator, // Reset after processing every request
+    socket: Io.net.Socket,
     reader: *Io.Reader,
     writer: *Io.Writer,
     stage: Stage,
@@ -42,18 +48,28 @@ pub const Session = struct {
     auth: AuthState = .{},
     encryptor: ?*Io.Writer = null,
     decryptor: ?*Io.Reader = null,
-    compressor: ?*std.Io.Writer = null,
+    compressor: ?*Io.Writer = null,
+    inbox: *Channel(Owned(InPacket)),
     outbox: *std.ArrayList(Owned(OutPacket)),
+    messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
     updates_rx: *Channel(Update),
 
     pub fn sendPendingPackets(self: Session) !void {
         const writer = self.compressor orelse self.writer;
+        const updates = try self.updates_rx.drain();
+        for (updates) |update| {
+            print("INCOMING!!! {any}\n", .{update});
+        }
+        if (updates.len > 0) {
+            const packet: OutPacket = .{ .container = .{ .list = updates } };
+            try packet.write(writer, self.scratch);
+        }
+
         for (self.outbox.items) |packet| {
             try packet.value.write(writer, self.scratch);
-            // TODO: use ring buffer or something
-            _ = self.outbox.orderedRemove(0);
         }
+        self.outbox.clearRetainingCapacity();
         try writer.flush();
     }
 
@@ -63,11 +79,11 @@ pub const Session = struct {
     }
 
     pub fn enqueuePacket(self: Session, packet: OutPacket) !void {
-        try self.outbox.append(self.scratch, .{ .value = packet });
+        try self.outbox.appendBounded(.{ .value = packet });
     }
 
     pub fn enqueuePacketAlloc(self: Session, arena: std.heap.ArenaAllocator, packet: OutPacket) !void {
-        try self.outbox.append(self.scratch, .{ .arena = arena, .value = packet });
+        try self.outbox.appendBounded(.{ .arena = arena, .value = packet });
     }
 
     pub fn enableDecryption(self: *Session, username: []u8, hash: [16]u8, sm_key: [16]u8) !void {
@@ -102,15 +118,26 @@ pub const Session = struct {
     }
 };
 
-pub fn start(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, actions_tx: *Channel(Action)) void {
-    print("INFO: Client {f} connected\n", .{stream.socket.address});
-    startSession(io, gpa, stream, actions_tx) catch |err| switch (err) {
-        error.EndOfStream => print("INFO: Client {f} disconnected\n", .{stream.socket.address}),
-        else => print("ERROR: Client {f} disconnected with error: {}", .{ stream.socket.address, err }),
+pub fn start(
+    io: Io,
+    gpa: std.mem.Allocator,
+    stream: Io.net.Stream,
+    messages_tx: *Channel(Message),
+    actions_tx: *Channel(Action),
+) void {
+    print("INFO: [Session] Client {f} connected\n", .{stream.socket.address});
+    startSession(io, gpa, stream, messages_tx, actions_tx) catch |err| {
+        print("ERROR: [Session] Client {f} disconnected with error: {}\n", .{ stream.socket.address, err });
     };
 }
 
-fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, actions_tx: *Channel(Action)) !void {
+fn startSession(
+    io: Io,
+    gpa: std.mem.Allocator,
+    stream: Io.net.Stream,
+    messages_tx: *Channel(Message),
+    actions_tx: *Channel(Action),
+) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     var scratch = std.heap.ArenaAllocator.init(gpa);
@@ -119,67 +146,126 @@ fn startSession(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, actions_t
     var writer_buf: [4096]u8 = undefined;
     var stream_reader = stream.reader(io, &reader_buf);
     var stream_writer = stream.writer(io, &writer_buf);
+    var inbox_back: [64]Owned(InPacket) = undefined;
+    var inbox_front: [64]Owned(InPacket) = undefined;
+    var inbox: Channel(Owned(InPacket)) = .init(io, &inbox_back, &inbox_front);
     var outbox_buf: [64]Owned(OutPacket) = undefined;
     var outbox: std.ArrayList(Owned(OutPacket)) = .initBuffer(&outbox_buf);
-    var upd_back_buf: [128]Update = undefined;
-    var upd_front_buf: [128]Update = undefined;
-    var updates_rx: Channel(Update) = .{
-        .back = .initBuffer(&upd_back_buf),
-        .front = .initBuffer(&upd_front_buf),
-        .mutex = .init,
-        .io = io,
-    };
+    var upd_back: [128]Update = undefined;
+    var upd_front: [128]Update = undefined;
+    var updates_rx: Channel(Update) = .init(io, &upd_back, &upd_front);
     var session: Session = .{
         .io = io,
         .gpa = gpa,
         .arena = arena.allocator(),
         .scratch = scratch.allocator(),
         .stage = .auth,
+        .socket = stream.socket,
         .reader = &stream_reader.interface,
         .writer = &stream_writer.interface,
+        .inbox = &inbox,
         .outbox = &outbox,
+        .messages_tx = messages_tx,
         .actions_tx = actions_tx,
         .updates_rx = &updates_rx,
     };
+
+    print("Sending challenge...\n", .{});
     try sendChallenge(&session);
 
+    // Syncronous loop, before entering world
     while (true) {
-        defer _ = scratch.reset(.retain_capacity);
         var packet_arena = std.heap.ArenaAllocator.init(gpa);
-        errdefer packet_arena.deinit();
-
+        errdefer arena.deinit();
+        defer _ = scratch.reset(.retain_capacity);
         const reader = session.decryptor orelse session.reader;
-
-        const packet = InPacket.read(reader, packet_arena.allocator()) catch |err| switch (err) {
-            error.UnknownOpcode => {
-                packet_arena.deinit();
-                continue;
-            },
-            else => return err,
+        const packet = InPacket.read(reader, packet_arena.allocator()) catch |err| {
+            packet_arena.deinit();
+            switch (err) {
+                error.UnknownOpcode => continue,
+                error.EndOfStream => {
+                    print("INFO: [Session Sync] Client {f} disconnected\n", .{session.socket.address});
+                    return;
+                },
+                else => {
+                    print("ERROR: [Session Sync] Client {f} disconnected with error: {}\n", .{ session.socket.address, err });
+                    return;
+                },
+            }
         };
-
-        // Handle global packets
-        switch (packet) {
-            .keep_alive => {
-                defer packet_arena.deinit();
-                try session.sendPacket(.{ .keep_alive = .{ .data = 0xf0 } });
-                continue;
-            },
-            else => {},
-        }
-
-        switch (session.stage) {
-            .auth => {
-                defer packet_arena.deinit();
-                try handleAuth(&session, packet);
-            },
-            .char_list => {
-                defer packet_arena.deinit();
-                try handleCharList(&session, packet);
-            },
-            .in_world => {},
-        }
-
+        try processPacket(&session, .{ .arena = packet_arena, .value = packet });
         try session.sendPendingPackets();
+
+        if (session.stage == .in_world) {
+            print("INFO: [Session Sync] Switching to async loop\n", .{});
+            break;
+        }
+    }
+
+    var reader_task = try io.concurrent(streamReader, .{&session});
+    defer reader_task.cancel(io) catch {};
+
+    // Async loop
+    while (true) {
+        try session.sendPendingPackets();
+        defer _ = scratch.reset(.retain_capacity);
+        try session.sendPendingPackets();
+        for (try session.inbox.drain()) |packet| {
+            try processPacket(&session, packet);
+        }
+        try io.sleep(.fromMilliseconds(50), .awake);
+    }
+}
+
+fn streamReader(session: *Session) !void {
+    while (true) {
+        var arena = std.heap.ArenaAllocator.init(session.gpa);
+        errdefer arena.deinit();
+        const reader = session.decryptor.?;
+
+        if (InPacket.read(reader, arena.allocator())) |packet| {
+            session.inbox.append(.{ .arena = arena, .value = packet }) catch break;
+        } else |err| {
+            arena.deinit();
+            switch (err) {
+                error.UnknownOpcode => continue,
+                error.EndOfStream => {
+                    print("INFO: [Session Async] Client {f} disconnected\n", .{session.socket.address});
+                    return;
+                },
+                else => {
+                    print("ERROR: [Session Async] Client {f} disconnected with error: {}\n", .{ session.socket.address, err });
+                    return;
+                },
+            }
+        }
+    }
+}
+
+fn processPacket(session: *Session, owned: Owned(InPacket)) !void {
+    const packet = owned.value;
+
+    // Handle global packets
+    switch (packet) {
+        .keep_alive => {
+            defer owned.deinit();
+            try session.sendPacket(.{ .keep_alive = .{ .data = 0xf0 } });
+            return;
+        },
+        else => {},
+    }
+
+    switch (session.stage) {
+        .auth => {
+            defer owned.deinit();
+            try handleAuth(session, packet);
+        },
+        .char_list => {
+            defer owned.deinit();
+            try handleCharList(session, packet);
+        },
+        .in_world => {
+            try handleInWorld(session, owned);
+        },
     }
 }

@@ -7,7 +7,7 @@ const Session = @import("../session.zig").Session;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
-const Reply = @import("../../world/events.zig").Reply;
+const Reply = @import("../../events/events.zig").Reply;
 const Account = @import("../../world/world.zig").Account;
 const InPacket = packets.InPacket;
 const ServerError = packets.ServerError;
@@ -69,7 +69,7 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     session.auth.username = payload.username;
 
     var reply: Reply(?Account) = .{};
-    try session.actions_tx.append(.{
+    try session.messages_tx.append(.{
         .auth = .{
             // Just sending the pointer because we're waiting for reply
             .username = session.auth.username.?,
@@ -108,7 +108,7 @@ fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
     try session.enableCompression();
 
     var reply: Reply(u8) = .{};
-    try session.actions_tx.append(.{
+    try session.messages_tx.append(.{
         .init_session = .{
             .channel = session.updates_rx,
             .reply = &reply,

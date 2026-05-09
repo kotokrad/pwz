@@ -51,7 +51,7 @@ fn FieldsTypeDiff(comptime F: type, comptime T: type) type {
     const fields = @typeInfo(T).@"struct".fields;
 
     comptime var len = 0;
-    inline for (fields) |f| if (f.type != @FieldType(F, f.name)) {
+    inline for (fields) |f| if (!@hasField(F, f.name) or f.type != @FieldType(F, f.name)) {
         len += 1;
     };
 
@@ -61,7 +61,7 @@ fn FieldsTypeDiff(comptime F: type, comptime T: type) type {
 
     comptime var i = 0;
     inline for (fields) |f| {
-        if (f.type != @FieldType(F, f.name)) {
+        if (!@hasField(F, f.name) or f.type != @FieldType(F, f.name)) {
             field_names[i] = f.name;
             field_types[i] = @FieldType(T, f.name);
             field_attrs[i] = .{
@@ -80,7 +80,7 @@ pub fn copyShallow(comptime F: type, comptime T: type, from: F, diff: FieldsType
     const to_info = @typeInfo(T);
     var result: T = undefined;
     inline for (to_info.@"struct".fields) |f| {
-        if (f.type == @FieldType(F, f.name)) {
+        if (@hasField(F, f.name) and f.type == @FieldType(F, f.name)) {
             @field(result, f.name) = @field(from, f.name);
         } else {
             @field(result, f.name) = @field(diff, f.name);
@@ -94,7 +94,7 @@ pub fn copyDeepAlloc(comptime F: type, comptime T: type, arena: std.mem.Allocato
     const to_info = @typeInfo(T);
     var result: T = undefined;
     inline for (to_info.@"struct".fields) |f| {
-        if (f.type == @FieldType(F, f.name)) {
+        if (@hasField(F, f.name) and f.type == @FieldType(F, f.name)) {
             switch (@typeInfo(f.type)) {
                 .@"struct" => {
                     @field(result, f.name) = try copyDeepAlloc(f.type, f.type, arena, @field(from, f.name), .{});

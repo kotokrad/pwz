@@ -6,7 +6,7 @@ const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
 const character = @import("../../world/character.zig");
-const events = @import("../../world/events.zig");
+const events = @import("../../events/events.zig");
 
 const Reply = events.Reply;
 const Owned = events.Owned;
@@ -32,7 +32,7 @@ fn handleRoleList(session: *Session, payload: RoleList) !void {
     _ = payload;
 
     var reply: Reply(Owned([]RoleInfo)) = .{};
-    try session.actions_tx.append(.{
+    try session.messages_tx.append(.{
         .char_list = .{
             .ids = session.account.?.chars,
             .reply = &reply,

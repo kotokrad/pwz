@@ -199,5 +199,7 @@ pub fn getExampleChar(gpa: std.mem.Allocator) !Character {
         .character_mode = try gpa.dupe(u8, &.{ 1, 0, 0, 0, 1, 0, 0, 0 }),
         .referrer_id = 0xFFFFFFFF,
         .cash_add = 362_000,
+
+        .angle = 120,
     };
 }
