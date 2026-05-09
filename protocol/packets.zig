@@ -34,6 +34,7 @@ pub const InPacket = union(enum(u16)) {
     key_exchange: KeyExchange   = 0x02,
     role_list: RoleList         = 0x52,
     select_role: SelectRole     = 0x46,
+    enter_world: EnterWorld     = 0x48,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !InPacket {
@@ -175,4 +176,13 @@ pub const SelectRole = struct {
 pub const SelectRoleRe = struct {
     zeroes: u32 = 0,
     gm_code: [33]u8,
+};
+
+pub const EnterWorld = struct {
+    role_id: u32,
+    provider_link_id: u32,
+    locktime: u32,
+    timeout: u32,
+    settime: u32,
+    localsid: u32,
 };
