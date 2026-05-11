@@ -25,10 +25,6 @@ pub fn main(init: std.process.Init) !void {
     var group: Io.Group = .init;
     defer group.cancel(io);
 
-    // var buf: [512]u8 = undefined;
-    // const slc = try std.fmt.hexToBytes(&buf, "BA75D330A007113B2F210134EAB5A761");
-    // print("slc: {any} \n", .{slc});
-
     var actions_back: [128]Action = undefined;
     var actions_front: [128]Action = undefined;
     var actions_channel: Channel(Action) = .init(io, &actions_back, &actions_front);

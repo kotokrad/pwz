@@ -213,8 +213,7 @@ pub fn getExampleChar() !Character {
         }),
         .create_time = 1_753_704_763,
         .lastlogin_time = 1_753_704_763,
-        // .position = .{ .x = 197.0, .y = 197.0, .z = 68.156 },
-        .position = .{ .x = 3_305_352_214, .y = 3_306_588_949, .z = 1_143_469_817 },
+        .position = .{ .x = 197.014344573, .y = 197.088059723, .z = 68.156112492 },
 
         .angle = 120,
 
