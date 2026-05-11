@@ -2,17 +2,6 @@ const std = @import("std");
 const Io = std.Io;
 const ArrayList = std.ArrayList;
 
-pub fn Owned(comptime T: type) type {
-    return struct {
-        arena: std.heap.ArenaAllocator,
-        value: T,
-
-        pub fn deinit(self: *@This()) void {
-            self.arena.deinit();
-        }
-    };
-}
-
 pub fn Channel(comptime T: type) type {
     return struct {
         mutex: Io.Mutex,

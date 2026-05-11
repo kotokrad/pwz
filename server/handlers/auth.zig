@@ -38,7 +38,7 @@ pub fn handleAuth(session: *Session, packet: InPacket) !void {
 
 pub fn sendChallenge(session: *Session) !void {
     const challenge_data = ChallengeData{
-        .server_load = 0xff,
+        .server_load = 0x10,
         .flags = .{ .is_pvp = true },
         .random_bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8 },
     };
@@ -58,7 +58,7 @@ pub fn sendChallenge(session: *Session) !void {
     // it will be used to hash the auth creds
     var buf: [17]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
-    try codec.serialize(ChallengeData, &writer, challenge_data, session.scratch);
+    try codec.serialize(ChallengeData, &writer, challenge_data);
     session.auth.challenge = buf;
 
     try session.sendPacket(.{ .challenge = challenge });
@@ -66,7 +66,7 @@ pub fn sendChallenge(session: *Session) !void {
 
 fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     session.auth.hash = payload.hash.value;
-    session.auth.username = payload.username;
+    session.auth.username = try session.arena.dupe(u8, payload.username.slice());
 
     var reply: Reply(?Account) = .{};
     try session.messages_tx.append(.{
@@ -79,14 +79,14 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
 
     const account = try reply.await(session.io);
 
-    print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username, payload.hash.value });
+    print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username.slice(), payload.hash.value });
     // print("debug: [Auth] client hash {X}\n", .{payload.hash.value});
     // if (account) |a| print("debug: [Auth] hash for {s}: {X}\n", .{ payload.username, a.hash });
 
     if (account == null or !std.mem.eql(u8, &payload.hash.value, &account.?.hash)) {
         const server_error = ServerError{
             .code = ErrorCode.invalid_credentials,
-            .message = "Yoyoyo",
+            .message = try .fromSlice("Yoyoyo"),
         };
         try session.enqueuePacket(.{ .server_error = server_error });
         return;
@@ -97,7 +97,7 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     // session.session_id = 0xEFBEADDE;
     session.account = account;
 
-    try session.enableDecryption(payload.username, payload.hash.value, sm_key);
+    try session.enableDecryption(payload.username.slice(), payload.hash.value, sm_key);
 
     const key_exchange = KeyExchange{ .key = .init(sm_key) };
     try session.enqueuePacket(.{ .key_exchange = key_exchange });

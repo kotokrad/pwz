@@ -41,24 +41,26 @@ pub const Rc4Writer = struct {
     }
 
     fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
-        const this: *@This() = @alignCast(@fieldParentPtr("writer", w));
+        errdefer print("error: rc4 drain buffered\n", .{});
+        const self: *@This() = @alignCast(@fieldParentPtr("writer", w));
         _ = splat;
 
         const buffered = w.buffered();
         // print("Compressed: {X}\n", .{buffered});
-        this.rc4.processSlice(buffered);
-        _ = try this.out.write(buffered);
-        try this.out.flush();
+        self.rc4.processSlice(buffered);
+        _ = try self.out.write(buffered);
+        try self.out.flush();
         // print("Encrypted:  {X}\n", .{buffered});
         _ = w.consumeAll();
 
+        errdefer print("error: rc4 drain data\n", .{});
         var buf: [128]u8 = undefined;
         const slice = data[0];
         @memcpy(buf[0..slice.len], slice);
         const processed_slice = buf[0..slice.len];
-        this.rc4.processSlice(processed_slice);
-        const written = try this.out.write(processed_slice);
-        try this.out.flush();
+        self.rc4.processSlice(processed_slice);
+        const written = try self.out.write(processed_slice);
+        try self.out.flush();
         return written;
     }
 };
@@ -87,11 +89,12 @@ pub const Rc4Reader = struct {
     }
 
     fn stream(r: *Reader, w: *Writer, limit: std.Io.Limit) Reader.StreamError!usize {
-        const this: *@This() = @alignCast(@fieldParentPtr("reader", r));
+        errdefer print("error: rc4 stream\n", .{});
+        const self: *@This() = @alignCast(@fieldParentPtr("reader", r));
         const data = limit.slice(try w.writableSliceGreedy(1));
         var vec: [1][]u8 = .{data};
-        const n = try this.in.readVec(&vec);
-        this.rc4.processSlice(data[0..n]);
+        const n = try self.in.readVec(&vec);
+        self.rc4.processSlice(data[0..n]);
         w.advance(n);
         return n;
     }

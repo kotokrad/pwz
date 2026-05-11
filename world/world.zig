@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
+const FixedArray = @import("../protocol/utils.zig").FixedArray;
 const utils = @import("utils.zig");
 const character = @import("character.zig");
 const types = @import("../protocol/types.zig");
@@ -8,7 +9,6 @@ const events = @import("../events/events.zig");
 const upd = @import("../events/updates.zig");
 
 const Channel = events.Channel;
-const Owned = events.Owned;
 const Message = events.Message;
 const Action = events.Action;
 const Update = events.Update;
@@ -68,13 +68,10 @@ const World = struct {
         return id;
     }
 
-    fn getRoleInfoList(self: World, ids: CharIds) !Owned([]types.RoleInfo) {
-        var arena: std.heap.ArenaAllocator = .init(self.gpa);
-        errdefer arena.deinit();
-        const allocator = arena.allocator();
-        const result = try allocator.alloc(types.RoleInfo, ids.len);
-        for (ids.chars[0..ids.len], 0..) |id, i| {
-            result[i] = try types.RoleInfo.from(allocator, self.characters[id].?);
+    fn getRoleInfoList(self: World, ids: CharIds) !FixedArray(types.RoleInfo, 8) {
+        var list: FixedArray(types.RoleInfo, 8) = .{};
+        for (ids.chars[0..ids.len]) |id| {
+            try list.append(try types.RoleInfo.from(self.characters[id].?));
         }
         return .{ .arena = arena, .value = result };
     }

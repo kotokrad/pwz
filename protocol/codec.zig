@@ -6,57 +6,48 @@ const Writer = std.Io.Writer;
 const utils = @import("utils.zig");
 const overrides = @import("overrides.zig");
 
+const FixedArray = utils.FixedArray;
+const String = utils.String;
+
 const shortTypeName = utils.shortTypeName;
 const getEndianFor = utils.getEndianFor;
 
-pub fn Seq(comptime T: type) type {
-    return struct {
-        list: []T,
+const LengthPrefixSize = enum(u16) { cuint, _ };
 
-        const Self = @This();
-        pub fn write(self: Self, writer: *Writer, arena: std.mem.Allocator) !void {
-            for (self.list) |item| {
-                try serialize(T, writer, item, arena);
-            }
-        }
-
-        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Octets(T) {
-            var result: std.ArrayList(T) = .empty;
-            while (reader.seek < reader.end) {
-                print("seek = {}, end = {}\n", .{ reader.seek, reader.end });
-                result.append(arena, deserialize(T, reader, arena));
-            }
-            return .{ .value = result };
-        }
-
-        pub fn init(value: T) Octets(T) {
-            return .{ .value = value };
-        }
-    };
-}
-
-pub fn Octets(comptime T: type) type {
+// Writes an item prefixed by its byte size
+// Parametrized by length prefix type (cuint|uint) and endianness
+fn OctetsGeneric(
+    comptime len_prefix_size: LengthPrefixSize,
+    comptime len_prefix_endian: std.builtin.Endian,
+    comptime T: type,
+) type {
     return struct {
         value: T,
 
+        const U = std.meta.Int(.unsigned, @intFromEnum(len_prefix_size));
         const Self = @This();
-        pub fn init(value: T) Octets(T) {
+        pub fn init(value: T) Self {
             return .{ .value = value };
         }
 
-        pub fn write(self: Self, writer: *Writer, arena: std.mem.Allocator) !void {
-            var aw: Writer.Allocating = .init(arena);
-            defer aw.deinit();
-            try serialize(T, &aw.writer, self.value, arena);
-            const payload = aw.written();
+        pub fn write(self: Self, writer: *Writer) !void {
+            var buf: [@sizeOf(T)]u8 = undefined;
+            var fw = Writer.fixed(&buf);
+            try serialize(T, &fw, self.value);
+            const payload = buf[0..fw.end];
 
-            try writeCuint(writer, payload.len);
+            if (len_prefix_size == .cuint) {
+                try writeCuint(writer, payload.len);
+            } else {
+                try writer.writeInt(U, @truncate(payload.len), len_prefix_endian);
+            }
+
             try writer.writeAll(payload);
         }
 
-        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Octets(T) {
-            const size = try readCuint(reader);
-            const buf = try reader.take(size);
+        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Self {
+            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(U, len_prefix_endian);
+            const buf = try reader.take(len);
             var buf_reader = Reader.fixed(buf);
             const value = try deserialize(T, &buf_reader, arena);
             return .{ .value = value };
@@ -64,27 +55,124 @@ pub fn Octets(comptime T: type) type {
     };
 }
 
+pub fn Octets(comptime T: type) type {
+    return OctetsGeneric(.cuint, .little, T);
+}
+
+pub fn OctetsU32LE(comptime T: type) type {
+    return OctetsGeneric(@enumFromInt(32), .little, T);
+}
+
+pub fn OctetsU16LE(comptime T: type) type {
+    return OctetsGeneric(@enumFromInt(16), .little, T);
+}
+
+// Writes amount of items, then encodes items one-by-one
+// Parametrized by length prefix type (cuint|uint) and endianness
+fn VecGeneric(
+    comptime len_prefix_size: LengthPrefixSize,
+    comptime len_prefix_endian: std.builtin.Endian,
+    comptime T: type,
+    comptime cap: usize,
+) type {
+    return struct {
+        list: FixedArray(T, cap),
+
+        const U = std.meta.Int(.unsigned, @intFromEnum(len_prefix_size));
+        const Self = @This();
+        pub fn init(list: []const T) !Self {
+            return .{ .list = try .fromSlice(list) };
+        }
+
+        pub fn write(self: Self, writer: *Writer) !void {
+            if (len_prefix_size == .cuint) {
+                try writeCuint(writer, self.list.len);
+            } else {
+                try writer.writeInt(U, @truncate(self.list.len), len_prefix_endian);
+            }
+            if (T == u8) {
+                try writer.writeAll(self.list);
+            } else {
+                for (self.list.slice()) |item| try serialize(T, writer, item);
+            }
+        }
+
+        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Self {
+            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(U, len_prefix_endian);
+            if (T == u8) {
+                return try reader.take(len);
+            } else {
+                var result: std.ArrayList(T) = .empty;
+                for (len) |item| result.append(arena, deserialize(T, reader, item, arena));
+                return .{ .list = result };
+            }
+        }
+    };
+}
+
+pub fn Vec(comptime T: type, comptime cap: usize) type {
+    return VecGeneric(.cuint, .little, T, cap);
+}
+
+pub fn VecU32LE(comptime T: type, comptime cap: usize) type {
+    return VecGeneric(@enumFromInt(32), .little, T, cap);
+}
+
+// Encodes items one-by-one without any size prefix
+pub fn Seq(comptime T: type, comptime cap: usize) type {
+    return struct {
+        list: FixedArray(T, cap),
+
+        const Self = @This();
+        pub fn write(self: Self, writer: *Writer) !void {
+            for (0..self.list.len) |i| {
+                try serialize(T, writer, self.list.items[i]);
+            }
+        }
+
+        // TODO: test this
+        // pub fn read(reader: *Reader, arena: std.mem.Allocator) !Octets(T) {
+        //     var result: std.ArrayList(T) = .empty;
+        //     while (reader.seek < reader.end) {
+        //         print("seek = {}, end = {}\n", .{ reader.seek, reader.end });
+        //         result.append(arena, deserialize(T, reader, arena));
+        //     }
+        //     return .{ .value = result };
+        // }
+
+        pub fn init(value: T) Octets(T) {
+            return .{ .value = value };
+        }
+    };
+}
+
 pub const UTF16String = struct {
-    value: []const u8,
+    string: String,
     const Self = @This();
 
-    pub fn write(self: Self, writer: *Writer, arena: std.mem.Allocator) !void {
-        _ = arena;
+    pub fn write(self: Self, writer: *Writer) !void {
         var buf: [128]u16 = undefined;
-        const len = try std.unicode.utf8ToUtf16Le(&buf, self.value);
+        const len = try std.unicode.utf8ToUtf16Le(&buf, self.string.slice());
         try writeCuint(writer, len * 2);
         try writer.writeAll(std.mem.sliceAsBytes(buf[0..len]));
     }
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !UTF16String {
+        _ = arena;
         const len = try readCuint(reader);
-        const buf = try reader.readAlloc(arena, len);
-        const utf8 = try std.unicode.utf16LeToUtf8Alloc(arena, buf);
-        return .{ .value = utf8 };
+        const buf: [1024]u8 = undefined;
+        try reader.readSliceShort(buf);
+        var utf8: String = .{ .len = len, .items = undefined };
+        try std.unicode.utf16LeToUtf8(utf8.items[0..len], buf);
+        return .{ .string = utf8 };
     }
 
-    pub fn init(value: []const u8) UTF16String {
-        return .{ .value = value };
+    pub fn init(string: []const u8) !UTF16String {
+        return .{ .string = try .fromSlice(string) };
+    }
+
+    pub fn fromFixedString(string: String) UTF16String {
+        return .{ .string = string };
     }
 };
 
@@ -127,7 +215,7 @@ pub fn cuintSize(value: usize) usize {
     } else std.debug.panic("ERROR: [Codec] CUInt overflow: value {} >= 0x20000000\n", .{value});
 }
 
-pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.Allocator) !void {
+pub fn serialize(comptime T: type, writer: *Writer, value: T) !void {
     switch (@typeInfo(T)) {
         .int => {
             try writer.writeInt(T, value, .little);
@@ -136,6 +224,7 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.All
             if (T != f32) {
                 @compileError("Float type " ++ @typeName(T) ++ " is not writable, only f32 are supported");
             }
+            print("float float float {}\n", .{value * 16777216.0});
             try writer.writeInt(u32, @bitCast(value * 16777216.0), .little);
         },
         .bool => {
@@ -146,9 +235,9 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.All
                 try writer.writeInt(BackingInt, @bitCast(value), .big);
             } else if (@hasDecl(overrides, shortTypeName(T)) and @hasDecl(@field(overrides, shortTypeName(T)), "write")) {
                 const override = @field(overrides, shortTypeName(T));
-                try override.write(value, writer, arena);
+                try override.write(value, writer);
             } else if (@hasDecl(T, "write")) {
-                try value.write(writer, arena);
+                try value.write(writer);
             } else {
                 inline for (info.fields) |f| {
                     const field = @field(value, f.name);
@@ -161,7 +250,7 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.All
                             try writer.writeInt(f.type, field, endian);
                         },
                         else => {
-                            try serialize(f.type, writer, field, arena);
+                            try serialize(f.type, writer, field);
                         },
                     }
                 }
@@ -175,19 +264,8 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T, arena: std.mem.All
         },
         .@"union" => {
             if (@hasDecl(T, "write")) {
-                try value.write(writer, arena);
+                try value.write(writer);
             } else @compileError("Union type is not writable: " ++ @typeName(T));
-        },
-        .pointer => |info| switch (info.size) {
-            .slice => {
-                try writeCuint(writer, value.len);
-                if (info.child == u8) {
-                    try writer.writeAll(value);
-                } else {
-                    for (value) |item| try serialize(info.child, writer, item, arena);
-                }
-            },
-            else => @compileError("Pointer type is not writable: " ++ @typeName(T)),
         },
         else => @compileError("Type is not writable: " ++ @typeName(T)),
     }
@@ -254,35 +332,8 @@ pub fn deserialize(comptime T: type, reader: *Reader, arena: std.mem.Allocator) 
                 return try T.read(reader, arena);
             } else @compileError("Union type is not readable: " ++ @typeName(T));
         },
-        .pointer => |info| switch (info.size) {
-            .slice => {
-                const len = try readCuint(reader);
-
-                if (info.child == u8) {
-                    return try reader.take(len);
-                } else {
-                    var result: std.ArrayList(info.child) = .empty;
-                    for (len) |item| result.append(arena, deserialize(info.child, reader, item, arena));
-                    return result;
-                }
-            },
-            else => @compileError("Pointer type is not readable: " ++ @typeName(T)),
-        },
         else => @compileError("Type is not readable: " ++ @typeName(T)),
     }
-}
-
-pub fn debug(value: anytype) void {
-    const T = @TypeOf(value);
-    var scratch: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
-    var aw: Writer.Allocating = .init(scratch.allocator());
-    const name = shortTypeName(T);
-    serialize(T, &aw.writer, value, scratch.allocator()) catch |err| {
-        print("DEBUG: serialization of {s} failed: {}", .{ name, err });
-        return;
-    };
-    print("DEBUG: {s} serialized:\n", .{name});
-    print("{X}\n", .{aw.written()});
 }
 
 test "read and write CUInt" {

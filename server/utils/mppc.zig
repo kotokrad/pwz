@@ -35,12 +35,13 @@ pub const MppcWriter = struct {
     }
 
     fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
-        const this: *@This() = @alignCast(@fieldParentPtr("writer", w));
+        errdefer print("error: mppc drain\n", .{});
+        const self: *@This() = @alignCast(@fieldParentPtr("writer", w));
         _ = splat;
 
         const buffered = w.buffered();
         // print("Plaintext:  {X}\n", .{buffered});
-        try this.mppc.compress(buffered);
+        try self.mppc.compress(buffered);
         _ = w.consumeAll();
 
         // Non-empty data means buffer overflow

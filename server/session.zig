@@ -50,7 +50,7 @@ pub const Session = struct {
     decryptor: ?*Io.Reader = null,
     compressor: ?*Io.Writer = null,
     inbox: *Channel(Owned(InPacket)),
-    outbox: *std.ArrayList(Owned(OutPacket)),
+    outbox: *std.ArrayList(OutPacket),
     messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
     updates_rx: *Channel(Update),
@@ -58,35 +58,31 @@ pub const Session = struct {
     pub fn sendPendingPackets(self: Session) !void {
         const writer = self.compressor orelse self.writer;
         const updates = try self.updates_rx.drain();
-        for (updates) |update| {
-            print("INCOMING!!! {any}\n", .{update});
-        }
+
         if (updates.len > 0) {
-            const packet: OutPacket = .{ .container = .{ .list = updates } };
+            errdefer print("error: sending pending updates\n", .{});
+            const packet: OutPacket = .{ .container = .{ .list = try .fromSlice(updates) } };
             try packet.write(writer, self.scratch);
         }
-
         for (self.outbox.items) |packet| {
-            try packet.value.write(writer, self.scratch);
+            errdefer print("error: sending pending packets\n", .{});
+            try packet.write(writer, self.scratch);
         }
-        self.outbox.clearRetainingCapacity();
         try writer.flush();
+        self.outbox.clearRetainingCapacity();
     }
 
     pub fn sendPacket(self: Session, packet: OutPacket) !void {
-        try packet.write(self.writer, self.scratch);
+        const writer = self.compressor orelse self.writer;
+        try packet.write(writer, self.scratch);
         try self.writer.flush();
     }
 
     pub fn enqueuePacket(self: Session, packet: OutPacket) !void {
-        try self.outbox.appendBounded(.{ .value = packet });
+        try self.outbox.appendBounded(packet);
     }
 
-    pub fn enqueuePacketAlloc(self: Session, arena: std.heap.ArenaAllocator, packet: OutPacket) !void {
-        try self.outbox.appendBounded(.{ .arena = arena, .value = packet });
-    }
-
-    pub fn enableDecryption(self: *Session, username: []u8, hash: [16]u8, sm_key: [16]u8) !void {
+    pub fn enableDecryption(self: *Session, username: []const u8, hash: [16]u8, sm_key: [16]u8) !void {
         const buf = try self.arena.alloc(u8, 4096);
         var decryptor = try self.arena.create(Rc4Reader);
         decryptor.* = .init(self.reader, buf, .{
@@ -121,7 +117,7 @@ pub const Session = struct {
 pub fn start(
     io: Io,
     gpa: std.mem.Allocator,
-    stream: Io.net.Stream,
+    stream: *Io.net.Stream,
     messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
 ) void {
@@ -134,7 +130,7 @@ pub fn start(
 fn startSession(
     io: Io,
     gpa: std.mem.Allocator,
-    stream: Io.net.Stream,
+    stream: *Io.net.Stream,
     messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
 ) !void {
@@ -146,14 +142,14 @@ fn startSession(
     var writer_buf: [4096]u8 = undefined;
     var stream_reader = stream.reader(io, &reader_buf);
     var stream_writer = stream.writer(io, &writer_buf);
-    var inbox_back: [64]Owned(InPacket) = undefined;
-    var inbox_front: [64]Owned(InPacket) = undefined;
-    var inbox: Channel(Owned(InPacket)) = .init(io, &inbox_back, &inbox_front);
-    var outbox_buf: [64]Owned(OutPacket) = undefined;
-    var outbox: std.ArrayList(Owned(OutPacket)) = .initBuffer(&outbox_buf);
-    var upd_back: [128]Update = undefined;
-    var upd_front: [128]Update = undefined;
-    var updates_rx: Channel(Update) = .init(io, &upd_back, &upd_front);
+    const inbox_back = try arena.allocator().alloc(Owned(InPacket), 64);
+    const inbox_front = try arena.allocator().alloc(Owned(InPacket), 64);
+    var inbox: Channel(Owned(InPacket)) = .init(io, inbox_back, inbox_front);
+    const outbox_buf = try arena.allocator().alloc(OutPacket, 64);
+    var outbox: std.ArrayList(OutPacket) = .initBuffer(outbox_buf);
+    const upd_back = try arena.allocator().alloc(Update, 64);
+    const upd_front = try arena.allocator().alloc(Update, 64);
+    var updates_rx: Channel(Update) = .init(io, upd_back, upd_front);
     var session: Session = .{
         .io = io,
         .gpa = gpa,
@@ -175,9 +171,9 @@ fn startSession(
 
     // Syncronous loop, before entering world
     while (true) {
+        defer _ = scratch.reset(.retain_capacity);
         var packet_arena = std.heap.ArenaAllocator.init(gpa);
         errdefer arena.deinit();
-        defer _ = scratch.reset(.retain_capacity);
         const reader = session.decryptor orelse session.reader;
         const packet = InPacket.read(reader, packet_arena.allocator()) catch |err| {
             packet_arena.deinit();
@@ -197,7 +193,9 @@ fn startSession(
         try session.sendPendingPackets();
 
         if (session.stage == .in_world) {
+            print("\n", .{});
             print("INFO: [Session Sync] Switching to async loop\n", .{});
+            print("\n", .{});
             break;
         }
     }
@@ -207,8 +205,8 @@ fn startSession(
 
     // Async loop
     while (true) {
-        try session.sendPendingPackets();
         defer _ = scratch.reset(.retain_capacity);
+        errdefer print("error: async loop\n", .{});
         try session.sendPendingPackets();
         for (try session.inbox.drain()) |packet| {
             try processPacket(&session, packet);

@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
+const FixedArray = @import("../../protocol/utils.zig").FixedArray;
 const Session = @import("../session.zig").Session;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
@@ -9,7 +10,6 @@ const character = @import("../../world/character.zig");
 const events = @import("../../events/events.zig");
 
 const Reply = events.Reply;
-const Owned = events.Owned;
 const InPacket = packets.InPacket;
 const RoleList = packets.RoleList;
 const RoleListRe = packets.RoleListRe;
@@ -31,7 +31,7 @@ pub fn handleCharList(session: *Session, packet: InPacket) !void {
 fn handleRoleList(session: *Session, payload: RoleList) !void {
     _ = payload;
 
-    var reply: Reply(Owned([]RoleInfo)) = .{};
+    var reply: Reply(FixedArray(RoleInfo, 8)) = .{};
     try session.messages_tx.append(.{
         .char_list = .{
             .ids = session.account.?.chars,
@@ -46,10 +46,10 @@ fn handleRoleList(session: *Session, payload: RoleList) !void {
         .next_slot = 0xFFFFFFFF,
         .account_id = session.account.?.id,
         .session_id = session.id.?,
-        .characters = char_list.value[0..1],
+        .characters = char_list,
     };
 
-    try session.enqueuePacketAlloc(char_list.arena, .{ .role_list_re = role_list_re });
+    try session.enqueuePacket(.{ .role_list_re = role_list_re });
 }
 
 fn handleSelectRole(session: *Session, payload: SelectRole) !void {

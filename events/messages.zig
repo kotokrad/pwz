@@ -1,6 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 
+const FixedArray = @import("../protocol/utils.zig").FixedArray;
 const channel = @import("channel.zig");
 const Update = @import("updates.zig").Update;
 const Account = @import("../world/world.zig").Account;
@@ -8,7 +9,6 @@ const CharIds = @import("../world/world.zig").CharIds;
 const RoleInfo = @import("../protocol/types.zig").RoleInfo;
 
 const Channel = channel.Channel;
-const Owned = channel.Owned;
 
 pub fn Reply(comptime T: type) type {
     return struct {
@@ -33,10 +33,11 @@ pub fn Reply(comptime T: type) type {
 // Session may expect a reply and will block until it's received.
 pub const Message = union(enum) {
     // zig fmt: off
-    auth:         struct { username: []const u8, reply: *Reply(?Account) },
-    init_session: struct { channel: *Channel(Update), reply: *Reply(u8) },
-    char_list:    struct { ids: CharIds, reply: *Reply(Owned([]RoleInfo)) },
-    enter_world:  struct { session_id: u8, char_id: u8 },
+    auth:          struct { username: []const u8, reply: *Reply(?Account) },
+    init_session:  struct { channel: *Channel(Update), reply: *Reply(u8) },
+    char_list:     struct { ids: CharIds, reply: *Reply(FixedArray(RoleInfo, 8)) },
+    enter_world:   struct { session_id: u8, char_id: u8 },
+    get_ui_config: struct { session_id: u8, char_id: u8, reply: *Reply(FixedArray(u8, 512)) },
     // zig fmt: on
 
     fn deinit(self: *Message) void {

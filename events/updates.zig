@@ -7,9 +7,11 @@ const utils = @import("../protocol/utils.zig");
 const Vec3 = @import("../world/utils.zig").Vec3;
 const character = @import("../world/character.zig");
 
+const FixedArray = utils.FixedArray;
 const EndianTable = utils.EndianTable;
 const copyShallow = utils.copyShallow;
-const copyDeepAlloc = utils.copyDeepAlloc;
+const OctetsU32LE = codec.OctetsU32LE;
+const VecU32LE = codec.VecU32LE;
 
 // `Updates` are mapped to `subpackets` that server sends
 // to the client in a `Container` packet
@@ -33,18 +35,18 @@ pub const Update = union(enum(u16)) {
         }
     }
 
-    pub fn write(self: Update, writer: *Writer, arena: std.mem.Allocator) !void {
-        var aw: Writer.Allocating = .init(arena);
-        defer aw.deinit();
-
+    pub fn write(self: Update, writer: *Writer) !void {
         switch (self) {
             inline else => |variant, tag| {
                 const T = @TypeOf(variant);
                 const opcode = @intFromEnum(tag);
 
-                try aw.writer.writeInt(u16, opcode, .little);
-                try codec.serialize(T, &aw.writer, variant, arena);
-                const payload = aw.written();
+                var buf: [4096]u8 = undefined;
+                var fw = Writer.fixed(&buf);
+
+                try fw.writeInt(u16, opcode, .little);
+                try codec.serialize(T, &fw, variant);
+                const payload = buf[0..fw.end];
 
                 try writer.writeByte(0x22);
                 try codec.writeCuint(writer, payload.len + codec.cuintSize(payload.len));
@@ -97,7 +99,7 @@ pub const RoleWorldInfo = struct {
     }
 };
 
-pub const NearbyPlayers = []struct {
+const NearbyPlayer = struct {
     char_id: u32,
     position: Vec3,
     crc: u16,
@@ -105,7 +107,18 @@ pub const NearbyPlayers = []struct {
     angle: u8,
     sec_level: u8,
     flags: character.CharacterFlags,
+
+    pub fn from(char: character.Character) NearbyPlayer {
+        return copyShallow(character.Character, NearbyPlayer, char, .{
+            .char_id = char.char_id,
+            .crc = 0x15ac,
+            .custom_crc = 0,
+            .sec_level = 0,
+        });
+    }
 };
+
+pub const NearbyPlayers = FixedArray(NearbyPlayer, 64);
 
 pub const ServerConfigInfo = struct {
     world_id: u32,

@@ -9,7 +9,6 @@ const shortTypeName = @import("../protocol/utils.zig").shortTypeName;
 const Vec3 = @import("../world/utils.zig").Vec3;
 
 const Channel = channel.Channel;
-const Owned = channel.Owned;
 
 // `Actions` are mapped to `subpackets` that server receives in a `Gamedata` packet.
 // They are `fire and forget`, and will be processed in the game loop

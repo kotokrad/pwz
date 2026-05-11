@@ -1,4 +1,10 @@
 const std = @import("std");
+const codec = @import("codec.zig");
+
+const readCuint = codec.readCuint;
+const writeCuint = codec.writeCuint;
+const serialize = codec.serialize;
+const deserialize = codec.deserialize;
 
 pub fn shortTypeName(comptime T: type) []const u8 {
     const full = @typeName(T);
@@ -90,29 +96,14 @@ pub fn copyShallow(comptime F: type, comptime T: type, from: F, diff: FieldsType
 }
 
 // Doesn't handle every case, just enough for complex packets
-pub fn copyDeepAlloc(comptime F: type, comptime T: type, arena: std.mem.Allocator, from: F, diff: FieldsTypeDiff(F, T)) !T {
+pub fn copyDeep(comptime F: type, comptime T: type, from: F, diff: FieldsTypeDiff(F, T)) !T {
     const to_info = @typeInfo(T);
     var result: T = undefined;
     inline for (to_info.@"struct".fields) |f| {
         if (@hasField(F, f.name) and f.type == @FieldType(F, f.name)) {
             switch (@typeInfo(f.type)) {
                 .@"struct" => {
-                    @field(result, f.name) = try copyDeepAlloc(f.type, f.type, arena, @field(from, f.name), .{});
-                },
-                .pointer => |info| {
-                    switch (@typeInfo(info.child)) {
-                        .@"struct" => {
-                            const field = @field(from, f.name);
-                            const dst = try arena.alloc(info.child, field.len);
-                            for (@field(from, f.name), 0..) |ff, i| {
-                                dst[i] = try copyDeepAlloc(info.child, info.child, arena, ff, .{});
-                            }
-                            @field(result, f.name) = dst;
-                        },
-                        else => {
-                            @field(result, f.name) = try arena.dupe(info.child, @field(from, f.name));
-                        },
-                    }
+                    @field(result, f.name) = try copyDeep(f.type, f.type, @field(from, f.name), .{});
                 },
                 else => @field(result, f.name) = @field(from, f.name),
             }
@@ -122,3 +113,51 @@ pub fn copyDeepAlloc(comptime F: type, comptime T: type, arena: std.mem.Allocato
     }
     return result;
 }
+
+pub fn FixedArray(comptime T: type, comptime cap: usize) type {
+    return struct {
+        items: [cap]T = undefined,
+        len: usize = 0,
+
+        const Self = @This();
+
+        pub fn fromSlice(s: []const T) !Self {
+            if (s.len > cap) return error.Overflow;
+            var fa: Self = .{ .len = @intCast(s.len) };
+            @memcpy(fa.items[0..s.len], s);
+            return fa;
+        }
+
+        pub fn slice(self: *const Self) []const T {
+            return self.items[0..self.len];
+        }
+
+        pub fn append(self: *Self, item: T) !void {
+            if (self.len >= cap) return error.Overflow;
+            self.items[self.len] = item;
+            self.len += 1;
+        }
+
+        pub fn write(self: Self, writer: *std.Io.Writer) !void {
+            try writeCuint(writer, self.len);
+            if (T == u8) {
+                try writer.writeAll(self.items[0..self.len]);
+            } else {
+                for (0..self.len) |i| try serialize(T, writer, self.items[i]);
+            }
+        }
+
+        pub fn read(reader: *std.Io.Reader, arena: std.mem.Allocator) !Self {
+            const len = try readCuint(reader);
+            if (T == u8) {
+                return try fromSlice(try reader.take(len));
+            } else {
+                var result: Self = .{};
+                for (len) |_| try result.append(deserialize(T, reader, arena));
+                return result;
+            }
+        }
+    };
+}
+
+pub const String = FixedArray(u8, 256);
