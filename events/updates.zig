@@ -17,14 +17,20 @@ const VecU32LE = codec.VecU32LE;
 // to the client in a `Container` packet
 pub const Update = union(enum(u16)) {
     // zig fmt: off
-    role_status_info: RoleStatusInfo     = 0x26,
-    role_world_info: RoleWorldInfo       = 0x08,
-    nearby_players: NearbyPlayers        = 0x04,
-    server_config_info: ServerConfigInfo = 0xCE,
-    unknown_010b: Unknown010B            = 0x010B,
-    safety_lock_status: SafetyLockStatus = 0x00,
-    enter_safe_zone: EnterSafeZone       = 0xA4,
-    enter_pvp_zone: EnterPvpZone         = 0xA5,
+    role_status_info: RoleStatusInfo       = 0x26,
+    role_world_info: RoleWorldInfo         = 0x08,
+    nearby_players: NearbyPlayers          = 0x04,
+    server_config_info: ServerConfigInfo   = 0xCE,
+    unknown_010b: Unknown010B              = 0x010B,
+    safety_lock_status: SafetyLockStatus   = 0x00,
+    enter_safe_zone: EnterSafeZone         = 0xA4,
+    enter_pvp_zone: EnterPvpZone           = 0xA5,
+    player_combat_stats: PlayerCombatStats = 0x32,
+    inventory: Inventory                   = 0x2B,
+    quest_inventory: QuestInventory        = 0x2A,
+    money: Money                           = 0x52,
+    skills: Skills                         = 0x5A,
+    unknown_69: Unknown69                  = 0x69,
     // zig fmt: on
 
     fn deinit(self: *Update) void {
@@ -156,3 +162,104 @@ pub const SafetyLockStatus = struct {
 
 pub const EnterSafeZone = struct {};
 pub const EnterPvpZone = struct {};
+
+pub const PlayerCombatStats = struct {
+    data: [168]u8,
+
+    // NOTE: It's supposed to be this:
+    // free_stats: u32 = 0,
+    // atk_lvl: u32 = 0,
+    // def_lvl: u32 = 0,
+    // crit_chance: u32 = 0,
+    // crit_multiplier: u32 = 0,
+    // vitality: u32 = 0,
+    // intelligence: u32 = 0,
+    // strength: u32 = 0,
+    // dexterity: u32 = 0,
+    // hp_regen: u32 = 0,
+    // mp_regen: u32 = 0,
+    // walk_speed: f32 = 0,
+    // run_speed: f32 = 0,
+    // swim_speed: f32 = 0,
+    // flight_speed: f32 = 0,
+    // accuracy: u32 = 0,
+    // damage_low: u32 = 0,
+    // damage_high: u32 = 0,
+    // attack_speed: u32 = 0,
+    // attack_range: f32 = 0,
+    // addon_dmg_low_metal: u32 = 0,
+    // addon_dmg_low_wood: u32 = 0,
+    // addon_dmg_low_water: u32 = 0,
+    // addon_dmg_low_fire: u32 = 0,
+    // addon_dmg_low_earth: u32 = 0,
+    // addon_dmg_high_metal: u32 = 0,
+    // addon_dmg_high_wood: u32 = 0,
+    // addon_dmg_high_water: u32 = 0,
+    // addon_dmg_high_fire: u32 = 0,
+    // addon_dmg_high_earth: u32 = 0,
+    // magic_dmg_low: u32 = 0,
+    // magic_dmg_high: u32 = 0,
+    // resist_metal: u32 = 0,
+    // resist_wood: u32 = 0,
+    // resist_water: u32 = 0,
+    // resist_fire: u32 = 0,
+    // resist_earth: u32 = 0,
+    // defense_physical: u32 = 0,
+    // evasion: u32 = 0,
+    // +
+    // character.chi_max at the end?
+
+    pub fn init() !PlayerCombatStats {
+        var out: [168]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&out, "00000000000000000000000001000000000000000500000005000000050000000500000041000000370000000400000002000000000000406666a640000040400000a04028000000070000000b0000001e0000006666a2410000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000200000002000000020000000200000002000000030000001e00000000000000");
+        return .{ .data = out };
+    }
+};
+
+const InventoryType = enum(u8) {
+    general = 0,
+    equipment = 1,
+    fashion = 5,
+};
+
+pub const Inventory = struct {
+    type: InventoryType,
+    slot_count: u8 = 32,
+    items: OctetsU32LE(VecU32LE(character.InventoryItem, 32)),
+
+    pub fn from(inv_type: InventoryType, char: character.Character) !Inventory {
+        _ = char;
+        switch (inv_type) {
+            .general => return .{ .type = inv_type, .items = .init(try .init(&.{})) },
+            .fashion => return .{ .type = inv_type, .items = .init(try .init(&.{})) },
+            .equipment => {
+                return .{ .type = inv_type, .items = .init(try .init(&.{})) };
+            },
+        }
+    }
+};
+
+pub const QuestInventory = struct {
+    type: u8 = 2,
+    slot_count: u8 = 32,
+    items: OctetsU32LE([128]u8) = .{ .value = @splat(0xFF) },
+};
+
+pub const Money = struct {
+    current: u32,
+    max: u32,
+
+    pub const endian: EndianTable(@This(), .big) = .{};
+};
+
+pub const Skills = VecU32LE(character.Skill, 32);
+
+pub const Unknown69 = struct {
+    data: [34]u8,
+
+    pub fn init() !Unknown69 {
+        var out: [34]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&out, "08000000000001000001000006000000010000005f04020000000000020000000000");
+        return .{ .data = out };
+    }
+};

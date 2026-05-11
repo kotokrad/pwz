@@ -26,12 +26,17 @@ pub const Account = struct {
     chars: CharIds,
 };
 
+pub const Session = struct {
+    updates_tx: *Channel(Update),
+    char_id: ?u8 = null,
+};
+
 const World = struct {
     gpa: std.mem.Allocator,
     accounts: std.StringHashMap(Account),
     characters: [256]?Character,
     players_online: [256]bool,
-    sessions: [256]?*Channel(Update),
+    sessions: [256]?Session,
     next_session_id: u8,
 
     fn init(gpa: std.mem.Allocator) World {
@@ -41,7 +46,7 @@ const World = struct {
             .characters = @splat(null),
             .players_online = @splat(false),
             .sessions = @splat(null),
-            .next_session_id = 68,
+            .next_session_id = 0,
         };
     }
 
@@ -54,16 +59,17 @@ const World = struct {
         char_ids[0] = 123;
         const test_account: Account = .{
             .id = 35,
-            .hash = .{ 41, 24, 244, 86, 253, 162, 124, 112, 60, 169, 226, 90, 244, 110, 139, 36 }, // qwer:qwer
+            .hash = .{ 186, 117, 211, 48, 160, 7, 17, 59, 47, 33, 1, 52, 234, 181, 167, 97 }, // qwer:qwer
+
             .chars = .{ .chars = char_ids, .len = 1 },
         };
         try self.accounts.put("qwer", test_account);
-        self.characters[123] = try character.getExampleChar(self.gpa);
+        self.characters[123] = try character.getExampleChar();
     }
 
     fn registerSession(self: *World, updates_tx: *Channel(Update)) u8 {
         const id = self.next_session_id;
-        self.sessions[id] = updates_tx;
+        self.sessions[id] = .{ .updates_tx = updates_tx };
         self.next_session_id += 1;
         return id;
     }
@@ -73,7 +79,7 @@ const World = struct {
         for (ids.chars[0..ids.len]) |id| {
             try list.append(try types.RoleInfo.from(self.characters[id].?));
         }
-        return .{ .arena = arena, .value = result };
+        return list;
     }
 };
 
@@ -110,41 +116,90 @@ pub fn loop(
                 },
                 .enter_world => |payload| {
                     print("INFO: [World] player is online: {}\n", .{payload.char_id});
+                    world.sessions[payload.session_id].?.char_id = payload.char_id;
+                    const session = world.sessions[payload.session_id];
                     const char = world.characters[payload.char_id];
-                    const update_tx = world.sessions[payload.session_id];
+                    if (session == null) {
+                        print("ERROR: [World] session {} does not exist\n", .{payload.session_id});
+                        continue;
+                    }
                     if (char == null) {
                         print("ERROR: [World] charater {} does not exist\n", .{payload.char_id});
                         continue;
                     }
-                    if (update_tx == null) {
+
+                    const updates_tx = session.?.updates_tx;
+
+                    // try updates_tx.?.appendMany(
+                    try updates_tx.append(.{ .role_status_info = .from(char.?) });
+                    try updates_tx.append(.{ .role_world_info = .from(char.?) });
+                    try updates_tx.append(.{ .nearby_players = try .fromSlice(&.{.from(char.?)}) });
+                    try updates_tx.append(.{ .server_config_info = .init() });
+                    try updates_tx.append(.{ .unknown_010b = .{} });
+                    try updates_tx.append(.{ .safety_lock_status = .init() });
+                    try updates_tx.append(.{ .enter_pvp_zone = .{} });
+                    // });
+                    world.players_online[payload.char_id] = true;
+                },
+                .get_ui_config => |payload| {
+                    const session = world.sessions[payload.session_id];
+                    const char = world.characters[payload.char_id];
+                    if (session == null) {
                         print("ERROR: [World] session {} does not exist\n", .{payload.session_id});
                         continue;
                     }
+                    if (char == null) {
+                        print("ERROR: [World] charater {} does not exist\n", .{payload.char_id});
+                        continue;
+                    }
 
-                    // try update_tx.?.appendMany(
-                    try update_tx.?.append(.{ .role_status_info = .from(char.?) });
-                    try update_tx.?.append(.{ .role_world_info = .from(char.?) });
-                    try update_tx.?.append(.{ .nearby_players = &.{} });
-                    try update_tx.?.append(.{ .server_config_info = .init() });
-                    try update_tx.?.append(.{ .unknown_010b = .{} });
-                    try update_tx.?.append(.{ .safety_lock_status = .init() });
-                    try update_tx.?.append(.{ .enter_pvp_zone = .{} });
-                    // });
-                    world.players_online[payload.char_id] = true;
+                    payload.reply.set(io, char.?.ui_config);
                 },
             }
         }
 
-        for (try actions_rx.drain()) |action| {
+        for (try actions_rx.drain()) |action_tuple| {
+            const session_id, const action = action_tuple;
+            const session = world.sessions[session_id];
+            if (session == null) {
+                print("ERROR: [World] session {} does not exist\n", .{session_id});
+                continue;
+            }
+            if (session.?.char_id == null) {
+                print("ERROR: [World] session {}: charater id is not set\n", .{session_id});
+                continue;
+            }
+            const char = world.characters[session.?.char_id.?];
+            if (char == null) {
+                print("ERROR: [World] session {}: charater {} does not exist\n", .{ session_id, session.?.char_id.? });
+                continue;
+            }
+
+            // Safe to unwrap: channel is set at the auth stage
+            const updates_tx = world.sessions[session_id].?.updates_tx;
+
             switch (action) {
                 .move => |payload| {
-                    print("[World] Player move: {any}\n", .{payload});
+                    _ = payload;
+                    // print("[World] Player move: {any}\n", .{payload});
                 },
                 .stop => |payload| {
-                    print("[World] Player stop: {any}\n", .{payload});
+                    _ = payload;
+                    // print("[World] Player stop: {any}\n", .{payload});
                 },
                 .get_base_info => |payload| {
-                    print("[World] GetBaseInfo: {any}\n", .{payload});
+                    _ = payload;
+                    // print("[World] GetBaseInfo: {any}\n", .{payload});
+
+                    try updates_tx.append(.{ .role_status_info = .from(char.?) });
+                    try updates_tx.append(.{ .player_combat_stats = try .init() });
+                    try updates_tx.append(.{ .inventory = try .from(.general, char.?) });
+                    try updates_tx.append(.{ .inventory = try .from(.equipment, char.?) });
+                    try updates_tx.append(.{ .inventory = try .from(.fashion, char.?) });
+                    try updates_tx.append(.{ .quest_inventory = .{} });
+                    try updates_tx.append(.{ .money = .{ .current = 0, .max = 12774155 } });
+                    try updates_tx.append(.{ .skills = try .init(char.?.skills.slice()) });
+                    try updates_tx.append(.{ .unknown_69 = try .init() });
                 },
             }
         }
