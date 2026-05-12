@@ -29,8 +29,8 @@ pub fn Reply(comptime T: type) type {
     };
 }
 
-// `Message` to the game loop from a session thread.
-// Session may expect a reply and will block until it's received.
+/// `Message` to the game loop from a session thread.
+/// Session may expect a reply and will block until it's received.
 pub const Message = union(enum) {
     // zig fmt: off
     auth:          struct { username: []const u8, reply: *Reply(?Account) },
@@ -39,12 +39,4 @@ pub const Message = union(enum) {
     enter_world:   struct { session_id: u8, char_id: u8 },
     get_ui_config: struct { session_id: u8, char_id: u8, reply: *Reply(FixedArray(u8, 512)) },
     // zig fmt: on
-
-    fn deinit(self: *Message) void {
-        switch (self) {
-            inline else => |payload| {
-                if (@hasDecl(@TypeOf(payload), "deinit")) payload.deinit();
-            },
-        }
-    }
 };

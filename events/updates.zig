@@ -13,8 +13,13 @@ const copyShallow = utils.copyShallow;
 const OctetsU32LE = codec.OctetsU32LE;
 const VecU32LE = codec.VecU32LE;
 
-// `Updates` are mapped to `subpackets` that server sends
-// to the client in a `Container` packet
+const Character = character.Character;
+const CharacterFlags = character.CharacterFlags;
+const EquipmentItem = character.EquipmentItem;
+const InventoryItem = character.InventoryItem;
+
+/// `Updates` are mapped to `subpackets` that server sends
+/// to the client in a `Container` packet
 pub const Update = union(enum(u16)) {
     // zig fmt: off
     role_status_info: RoleStatusInfo       = 0x26,
@@ -79,8 +84,8 @@ pub const RoleStatusInfo = struct {
 
     pub const endian: EndianTable(@This(), .little) = .{ .cultivation = .big };
 
-    pub fn from(char: character.Character) RoleStatusInfo {
-        return copyShallow(character.Character, RoleStatusInfo, char, .{});
+    pub fn from(char: Character) RoleStatusInfo {
+        return copyShallow(Character, RoleStatusInfo, char, .{});
     }
 };
 
@@ -93,10 +98,10 @@ pub const RoleWorldInfo = struct {
     custom_crc: u16,
     angle: u8,
     sec_level: u8,
-    flags: character.CharacterFlags,
+    flags: CharacterFlags,
 
-    pub fn from(char: character.Character) RoleWorldInfo {
-        return copyShallow(character.Character, RoleWorldInfo, char, .{
+    pub fn from(char: Character) RoleWorldInfo {
+        return copyShallow(Character, RoleWorldInfo, char, .{
             .char_id = char.char_id,
             .crc = 0x15ac,
             .custom_crc = 0,
@@ -112,11 +117,11 @@ const NearbyPlayer = struct {
     custom_crc: u16,
     angle: u8,
     sec_level: u8,
-    flags: character.CharacterFlags,
+    flags: CharacterFlags,
 
-    pub fn from(char: character.Character) NearbyPlayer {
-        return copyShallow(character.Character, NearbyPlayer, char, .{
-            .char_id = char.char_id,
+    pub fn from(char: Character) NearbyPlayer {
+        return copyShallow(Character, NearbyPlayer, char, .{
+            .char_id = 5,
             .crc = 0x15ac,
             .custom_crc = 0,
             .sec_level = 0,
@@ -225,10 +230,10 @@ const InventoryType = enum(u8) {
 pub const Inventory = struct {
     type: InventoryType,
     slot_count: u8 = 32,
-    items: OctetsU32LE(VecU32LE(character.InventoryItem, 32)),
+    items: OctetsU32LE(VecU32LE(InventoryItem, 32)),
 
-    pub fn from(inv_type: InventoryType, char: character.Character) !Inventory {
         _ = char;
+    pub fn from(inv_type: InventoryType, char: Character) !Inventory {
         switch (inv_type) {
             .general => return .{ .type = inv_type, .items = .init(try .init(&.{})) },
             .fashion => return .{ .type = inv_type, .items = .init(try .init(&.{})) },

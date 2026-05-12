@@ -7,6 +7,8 @@ const String = @import("../protocol/utils.zig").String;
 const DateTime = u32;
 const CustomData = FixedArray(u8, 256);
 
+pub const MAX_EQUIPMENT_ITEMS = 22;
+
 pub const InventoryItem = struct {
     slot: u32,
     id: u32,
@@ -85,7 +87,7 @@ pub const Character = struct {
     cultivation: u16 = 0,
     name: String,
     custom_data: CustomData,
-    equipment: FixedArray(EquipmentItem, 22),
+    equipment: FixedArray(EquipmentItem, MAX_EQUIPMENT_ITEMS),
     is_active: bool = true,
     delete_time: DateTime = 0,
     create_time: DateTime = 0,

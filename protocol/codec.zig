@@ -14,8 +14,8 @@ const getEndianFor = utils.getEndianFor;
 
 const LengthPrefixSize = enum(u16) { cuint, _ };
 
-// Writes an item prefixed by its byte size
-// Parametrized by length prefix type (cuint|uint) and endianness
+/// Writes an item prefixed by its byte size
+/// Parametrized by length prefix type (cuint|uint) and endianness
 fn OctetsGeneric(
     comptime len_prefix_size: LengthPrefixSize,
     comptime len_prefix_endian: std.builtin.Endian,
@@ -67,8 +67,8 @@ pub fn OctetsU16LE(comptime T: type) type {
     return OctetsGeneric(@enumFromInt(16), .little, T);
 }
 
-// Writes amount of items, then encodes items one-by-one
-// Parametrized by length prefix type (cuint|uint) and endianness
+/// Writes amount of items, then encodes items one-by-one
+/// Parametrized by length prefix type (cuint|uint) and endianness
 fn VecGeneric(
     comptime len_prefix_size: LengthPrefixSize,
     comptime len_prefix_endian: std.builtin.Endian,
@@ -118,15 +118,15 @@ pub fn VecU32LE(comptime T: type, comptime cap: usize) type {
     return VecGeneric(@enumFromInt(32), .little, T, cap);
 }
 
-// Encodes items one-by-one without any size prefix
+/// Encodes items one-by-one without any size prefix
 pub fn Seq(comptime T: type, comptime cap: usize) type {
     return struct {
         list: FixedArray(T, cap),
 
         const Self = @This();
         pub fn write(self: Self, writer: *Writer) !void {
-            for (0..self.list.len) |i| {
-                try serialize(T, writer, self.list.items[i]);
+            for (self.list.slice()) |item| {
+                try serialize(T, writer, item);
             }
         }
 
@@ -160,11 +160,12 @@ pub const UTF16String = struct {
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !UTF16String {
         _ = arena;
         const len = try readCuint(reader);
-        const buf: [1024]u8 = undefined;
-        try reader.readSliceShort(buf);
-        var utf8: String = .{ .len = len, .items = undefined };
-        try std.unicode.utf16LeToUtf8(utf8.items[0..len], buf);
-        return .{ .string = utf8 };
+        var utf16_buf: [128]u16 = undefined;
+        const data = try reader.take(len);
+        @memcpy(std.mem.sliceAsBytes(utf16_buf[0 .. len / 2]), data);
+        var utf8_buf: [384]u8 = undefined;
+        _ = try std.unicode.utf16LeToUtf8(&utf8_buf, utf16_buf[0 .. len / 2]);
+        return .{ .string = try .fromSlice(utf8_buf[0 .. len / 2]) };
     }
 
     pub fn init(string: []const u8) !UTF16String {

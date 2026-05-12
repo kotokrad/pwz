@@ -128,6 +128,11 @@ pub fn FixedArray(comptime T: type, comptime cap: usize) type {
             return fa;
         }
 
+        pub fn fromHex(hex: []const u8) !Self {
+            var buf: [cap]u8 = undefined;
+            return try fromSlice(try std.fmt.hexToBytes(&buf, hex));
+        }
+
         pub fn slice(self: *const Self) []const T {
             return self.items[0..self.len];
         }
@@ -143,7 +148,7 @@ pub fn FixedArray(comptime T: type, comptime cap: usize) type {
             if (T == u8) {
                 try writer.writeAll(self.items[0..self.len]);
             } else {
-                for (0..self.len) |i| try serialize(T, writer, self.items[i]);
+                for (self.slice()) |item| try serialize(T, writer, item);
             }
         }
 

@@ -264,7 +264,7 @@ pub const GetHelpStatesRe = struct {
     pub const endian: EndianTable(@This(), .little) = .{ .role_id = .big, .localsid = .big };
 };
 
-// Client send it every time you walk into another zone
+/// Client sends it every time you walk into another zone
 pub const BattleGetMap = struct {
     role_id: u32,
     localsid: u32,

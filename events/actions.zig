@@ -10,14 +10,14 @@ const Vec3 = @import("../world/utils.zig").Vec3;
 
 const Channel = channel.Channel;
 
-// `Actions` are mapped to `subpackets` that server receives in a `Gamedata` packet.
-// They are `fire and forget`, and will be processed in the game loop
-// without blocking the session thread.
-// Server may respond with `Update` packets that will be aggregated
-// and sent in one `Container` packet and the end of the tick.
-// (but for now server responds immediately)
-
-// We have to send it together with the session id
+/// `Actions` are mapped to `subpackets` that server receives in a `Gamedata` packet.
+/// They are `fire and forget`, and will be processed in the game loop
+/// without blocking the session thread.
+/// Server may respond with `Update` packets that will be aggregated
+/// and sent in one `Container` packet and the end of the tick.
+/// (but for now server responds immediately)
+///
+/// We have to send it together with the session id
 pub const Action = struct { u8, ActionPayload };
 
 pub const ActionPayload = union(enum(u16)) {

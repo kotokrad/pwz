@@ -51,7 +51,7 @@ pub const RoleInfo = struct {
     cultivation: u32,
     name: UTF16String,
     custom_data: FixedArray(u8, 256),
-    equipment: FixedArray(character.EquipmentItem, 22),
+    equipment: FixedArray(character.EquipmentItem, character.MAX_EQUIPMENT_ITEMS),
     is_active: bool,
     delete_time: u32,
     create_time: u32,
