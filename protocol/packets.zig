@@ -31,19 +31,21 @@ pub fn Owned(comptime T: type) type {
 
 pub const InPacket = union(enum(u16)) {
     // zig fmt: off
-    gamedata: ActionPayload        = 0x22,
-    keep_alive: KeepAlive          = 0x5A,
-    login_request: LoginRequest    = 0x03,
-    key_exchange: KeyExchange      = 0x02,
-    role_list: RoleList            = 0x52,
-    select_role: SelectRole        = 0x46,
-    enter_world: EnterWorld        = 0x48,
-    get_ui_config: GetUIConfig     = 0x68,
-    get_friends: GetFriends        = 0xCE,
-    get_saved_msg: GetSavedMsg     = 0xD9,
-    get_help_states: GetHelpStates = 0x82,
-    battle_get_map: BattleGetMap   = 0x352,
-    check_new_mail: CheckNewMail   = 0x1068,
+    gamedata: ActionPayload                  = 0x22,
+    keep_alive: KeepAlive                    = 0x5A,
+    login_request: LoginRequest              = 0x03,
+    key_exchange: KeyExchange                = 0x02,
+    role_list: RoleList                      = 0x52,
+    select_role: SelectRole                  = 0x46,
+    enter_world: EnterWorld                  = 0x48,
+    get_ui_config: GetUIConfig               = 0x68,
+    get_friends: GetFriends                  = 0xCE,
+    get_saved_msg: GetSavedMsg               = 0xD9,
+    get_help_states: GetHelpStates           = 0x82,
+    battle_get_map: BattleGetMap             = 0x352,
+    check_new_mail: CheckNewMail             = 0x1068,
+    send_chat_message: SendChatMessage       = 0x4F,
+    send_private_message: SendPrivateMessage = 0x60,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !InPacket {
@@ -64,9 +66,11 @@ pub const InPacket = union(enum(u16)) {
             inline for (@typeInfo(std.meta.Tag(InPacket)).@"enum".fields) |field| {
                 if (field.value == opcode) {
                     const T = @FieldType(InPacket, field.name);
+                    // const hex = reader.buffered();
                     const payload = try codec.deserialize(T, reader, arena);
 
                     print("0x{X:0>4}: <- {s}\n", .{ opcode, utils.shortTypeName(T) });
+                    // print("    hex: {X}\n", .{hex});
                     // print("    {any}\n", .{payload});
                     return @unionInit(InPacket, field.name, payload);
                 }
@@ -95,6 +99,8 @@ pub const OutPacket = union(enum(u16)) {
     get_saved_msg_re: GetSavedMsgRe     = 0xDA,
     get_help_states_re: GetHelpStatesRe = 0x83,
     battle_get_map_re: BattleGetMapRe   = 0x353,
+    world_chat: WorldChat               = 0x50,
+    chat_message: ChatMessage           = 0x85,
     // zig fmt: on
 
     pub fn write(self: OutPacket, writer: *Writer, scratch: std.mem.Allocator) !void {
@@ -289,4 +295,56 @@ pub const CheckNewMail = struct {
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
 
-pub const SendChatMessage = struct {};
+/// TODO: implement emoji packs:
+/// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3000 3E00 - default pack 🙂
+/// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3100 3E00 - default pack 😁
+pub const SendChatMessage = struct {
+    chat: types.ChatType,
+    unk1: u8,
+    role_id: u32,
+    unk2: u32,
+    message: UTF16String,
+};
+
+/// Somewhere it might have a flag saying that
+/// the recepient is in the friend list.
+/// Message to a friend is pink instead of blue
+/// so the client checks it locally
+///
+/// `unk2` might be a `to_id` if you message by clicking on someone
+/// instead of entering the name manually? but why?
+pub const SendPrivateMessage = struct {
+    unk1: u16, // 00E2
+    from: UTF16String,
+    from_id: u32,
+    to: UTF16String,
+    unk2: u32 = 0, // maybe to_id?
+    message: UTF16String,
+};
+
+/// Can be used for a normal chat
+/// with the character name specified in `from`
+/// If `role_id = 0`, the name is not shown
+pub const ChatMessage = struct {
+    chat: types.ChatType,
+    null: u8 = 0,
+    role_id: u32 = 0,
+    from: UTF16String,
+    message: UTF16String,
+    unk1: u32 = 0,
+    unk2: u8 = 0,
+};
+
+/// Not sure how it is different from `ChatMessage`.
+/// If `role_id = 0`, the name is not shown
+/// With other `role_id`s, message is just not visible
+///
+/// TODO: test it more
+pub const WorldChat = struct {
+    chat: types.ChatType,
+    null: u8 = 0,
+    role_id: u32 = 0,
+    message: UTF16String,
+    unk1: u32 = 0,
+    unk2: u8 = 0,
+};

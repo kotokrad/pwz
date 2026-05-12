@@ -82,6 +82,10 @@ pub const Session = struct {
         try self.outbox.appendBounded(packet);
     }
 
+    pub fn enqueuePackets(self: Session, packets: []const OutPacket) !void {
+        try self.outbox.appendSliceBounded(packets);
+    }
+
     pub fn enableDecryption(self: *Session, username: []const u8, hash: [16]u8, sm_key: [16]u8) !void {
         const buf = try self.arena.alloc(u8, 4096);
         var decryptor = try self.arena.create(Rc4Reader);

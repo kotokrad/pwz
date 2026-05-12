@@ -24,18 +24,26 @@ const GetHelpStatesRe = packets.GetHelpStatesRe;
 const BattleGetMap = packets.BattleGetMap;
 const BattleGetMapRe = packets.BattleGetMapRe;
 const CheckNewMail = packets.CheckNewMail;
+const SendChatMessage = packets.SendChatMessage;
+const SendPrivateMessage = packets.SendPrivateMessage;
+const ChatMessage = packets.ChatMessage;
+const WorldChat = packets.WorldChat;
 
 pub fn handleInWorld(session: *Session, packet: Owned(InPacket)) !void {
     errdefer packet.deinit();
     switch (packet.value) {
-        .enter_world => |payload| try handleEnterWorld(session, payload),
-        .gamedata => |payload| try handleGamedata(session, payload),
-        .get_ui_config => |payload| try handleGetUIConfig(session, payload),
-        .get_friends => |payload| try handleGetFriends(session, payload),
-        .get_saved_msg => |payload| try handleGetSavedMsg(session, payload),
-        .get_help_states => |payload| try handleGetHelpStates(session, payload),
-        .battle_get_map => |payload| try handleBattleGetMap(session, payload),
-        .check_new_mail => |payload| try handleCheckNewMail(session, payload),
+        // zig fmt: off
+        .enter_world          => |payload| try handleEnterWorld(session, payload),
+        .gamedata             => |payload| try handleGamedata(session, payload),
+        .get_ui_config        => |payload| try handleGetUIConfig(session, payload),
+        .get_friends          => |payload| try handleGetFriends(session, payload),
+        .get_saved_msg        => |payload| try handleGetSavedMsg(session, payload),
+        .get_help_states      => |payload| try handleGetHelpStates(session, payload),
+        .battle_get_map       => |payload| try handleBattleGetMap(session, payload),
+        .check_new_mail       => |payload| try handleCheckNewMail(session, payload),
+        .send_chat_message    => |payload| try handleSendChatMessage(session, payload),
+        .send_private_message => |payload| try handleSendPrivateMessage(session, payload),
+        // zig fmt: on
 
         else => {
             print("ERROR: [InWorld] Unexpected packet {any}\n", .{packet});
@@ -109,6 +117,38 @@ fn handleBattleGetMap(session: *Session, payload: BattleGetMap) !void {
 fn handleCheckNewMail(session: *Session, payload: CheckNewMail) !void {
     _ = session;
     _ = payload;
+}
+
+fn handleSendChatMessage(session: *Session, payload: SendChatMessage) !void {
+    // TODO: forward to World and listen for incoming messages to send these packets.
+    // Right now World can only send Updates, so need to set up another Message channel
+    print("INFO: New chat message: {s}\n", .{payload.message.string.slice()});
+
+    // const message = ChatMessage{
+    //     .chat = payload.chat,
+    //     .role_id = 123,
+    //     .from = try .init("Yo"),
+    //     .message = try .init("Hey"),
+    // };
+
+    const announce_1 = WorldChat{ .chat = .trade, .message = try .init("Commands:") }; // Not monospace, unfortunately
+    const announce_2 = WorldChat{ .chat = .trade, .message = try .init("    $ help         - show this message") };
+    const announce_3 = WorldChat{ .chat = .trade, .message = try .init("    $ rm -fr /    - remove french language pack") };
+
+    try session.enqueuePackets(&.{
+        .{ .world_chat = announce_1 },
+        .{ .world_chat = announce_2 },
+        .{ .world_chat = announce_3 },
+    });
+}
+
+fn handleSendPrivateMessage(session: *Session, payload: SendPrivateMessage) !void {
+    _ = session;
+    print("INFO: New private message from {s} to {s}: {s}\n", .{
+        payload.from.string.slice(),
+        payload.to.string.slice(),
+        payload.message.string.slice(),
+    });
 }
 
 fn handleGamedata(session: *Session, payload: ActionPayload) !void {
