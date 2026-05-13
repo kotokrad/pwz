@@ -178,18 +178,9 @@ pub fn loop(
             const updates_tx = world.sessions[session_id].?.updates_tx;
 
             switch (action) {
-                .move => |payload| {
-                    _ = payload;
-                    // print("[World] Player move: {any}\n", .{payload});
-                },
-                .stop => |payload| {
-                    _ = payload;
-                    // print("[World] Player stop: {any}\n", .{payload});
-                },
-                .get_base_info => |payload| {
-                    _ = payload;
-                    // print("[World] GetBaseInfo: {any}\n", .{payload});
-
+                .move => {},
+                .stop => {},
+                .get_base_info => {
                     try updates_tx.append(.{ .role_status_info = .from(char.?) });
                     try updates_tx.append(.{ .player_combat_stats = try .init() });
                     try updates_tx.append(.{ .inventory = try .from(.general, char.?) });
@@ -200,6 +191,15 @@ pub fn loop(
                     try updates_tx.append(.{ .skills = try .init(char.?.skills.slice()) });
                     try updates_tx.append(.{ .unknown_69 = try .init() });
                 },
+                .gm_teleport => |payload| {
+                    // Doesn't work because of that 0x43 thing
+                    try updates_tx.append(.{ .stop = .{
+                        .char_id = char.?.char_id,
+                        .pos = payload.pos,
+                    } });
+                },
+                .stop_meditation => {},
+                .respawn => {},
             }
         }
 

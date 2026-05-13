@@ -8,6 +8,7 @@ const DateTime = u32;
 const CustomData = FixedArray(u8, 256);
 
 pub const MAX_EQUIPMENT_ITEMS = 22;
+pub const MAX_SKILLS = 32;
 
 pub const InventoryItem = struct {
     slot: u32,
@@ -66,15 +67,40 @@ pub const Skill = struct {
 };
 
 pub const CharacterFlags = packed struct(u32) {
-    unk0: u10 = 0,
-    in_faction: bool = false,
-    unk1: u1 = 0,
-    is_fashion: bool = false,
-    is_gm: bool = false,
-    is_pvp: bool = false,
-    unk2: u10 = 0,
-    unk_half_invis: bool = false,
-    unk3: u6 = 0,
+    // zig fmt: off
+    unk00: bool         = false,
+    unk01: bool         = false,
+    gm_invis: bool      = false,
+    unk03: bool         = false,
+    unk04: bool         = false,
+    unk05: bool         = false,
+    unk06: bool         = false,
+    unk07: bool         = false,
+    invalid08: bool     = false,
+    in_combat: bool     = false,
+    unk10: bool         = false,
+    invalid11: bool     = false,
+    invalid12: bool     = false,
+    is_pk: bool         = true,
+    unk14: bool         = false,
+    invalid15: bool     = false,
+    unk16: bool         = false,
+    unk17: bool         = false,
+    invalid18: bool     = false,
+    in_faction: bool    = false, // probably?
+    unk20: bool         = false,
+    is_fashion: bool    = false,
+    is_gm: bool         = true,
+    is_pvp: bool        = false,
+    invalid24: bool     = false,
+    invalid25: bool     = false,
+    is_flagged: bool    = false,
+    unk27: bool         = false,
+    is_flying: bool     = false,
+    is_meditating: bool = false,
+    invalid30: bool     = false,
+    is_dead: bool       = false,
+    // zig fmt: on
 };
 
 pub const Character = struct {
@@ -104,7 +130,10 @@ pub const Character = struct {
     chi: u32 = 0,
     chi_max: u32 = 0,
 
-    // Combat stats
+    // NOTE: Combat stats are not implemented. Just skip them
+    // and return hardcoded data in Updates->PlayerCombatStats
+    // Though `run_speed` etc might be useful later
+    //
     // free_stats: u32 = 0,
     // atk_lvl: u32 = 0,
     // def_lvl: u32 = 0,
@@ -152,7 +181,7 @@ pub const Character = struct {
     angle: u8 = 0,
 
     // Etc
-    skills: FixedArray(Skill, 32),
+    skills: FixedArray(Skill, MAX_SKILLS),
 
     ui_config: FixedArray(u8, 512),
 };
@@ -215,7 +244,7 @@ pub fn getExampleChar() !Character {
         }),
         .create_time = 1_753_704_763,
         .lastlogin_time = 1_753_704_763,
-        .position = .{ .x = 197.014344573, .y = 197.088059723, .z = 68.156112492 },
+        .position = .{ .x = 111, .y = 40, .z = 40 },
 
         .angle = 120,
 

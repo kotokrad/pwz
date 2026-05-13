@@ -22,6 +22,8 @@ const InventoryItem = character.InventoryItem;
 /// to the client in a `Container` packet
 pub const Update = union(enum(u16)) {
     // zig fmt: off
+    move: Move                             = 0x0F,
+    stop: Stop                             = 0x23,
     role_status_info: RoleStatusInfo       = 0x26,
     role_world_info: RoleWorldInfo         = 0x08,
     nearby_players: NearbyPlayers          = 0x04,
@@ -129,7 +131,7 @@ const NearbyPlayer = struct {
     }
 };
 
-pub const NearbyPlayers = FixedArray(NearbyPlayer, 64);
+pub const NearbyPlayers = FixedArray(NearbyPlayer, 8);
 
 pub const ServerConfigInfo = struct {
     world_id: u32,
@@ -257,7 +259,7 @@ pub const Money = struct {
     pub const endian: EndianTable(@This(), .big) = .{};
 };
 
-pub const Skills = VecU32LE(character.Skill, 32);
+pub const Skills = VecU32LE(character.Skill, character.MAX_SKILLS);
 
 pub const Unknown69 = struct {
     data: [34]u8,
@@ -267,4 +269,29 @@ pub const Unknown69 = struct {
         _ = try std.fmt.hexToBytes(&out, "08000000000001000001000006000000010000005f04020000000000020000000000");
         return .{ .data = out };
     }
+};
+
+const Move = struct {
+    char_id: u32,
+    pos: Vec3,
+    speed: u16 = 7000,
+    direction: u8 = 0,
+    move_mode: u8 = 0,
+};
+
+/// After receiving the `Stop` packet,
+/// client send 0x43 that looks like this:
+/// ```zig
+/// const Something = struct {
+///     unk: u16,     // 0100
+///     char_id: u32, // 7B000000
+/// }
+/// ```
+/// and doesn't react otherwise
+const Stop = struct {
+    char_id: u32,
+    pos: Vec3,
+    speed: u16 = 7000,
+    direction: u8 = 0,
+    move_mode: u8 = 0,
 };

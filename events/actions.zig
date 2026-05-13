@@ -22,9 +22,12 @@ pub const Action = struct { u8, ActionPayload };
 
 pub const ActionPayload = union(enum(u16)) {
     // zig fmt: off
-    move: Move                 = 0x00,
-    stop: Stop                 = 0x07,
-    get_base_info: GetBaseInfo = 0x27,
+    move: Move                      = 0x00,
+    stop: Stop                      = 0x07,
+    respawn: Respawn                = 0x04,
+    get_base_info: GetBaseInfo      = 0x27,
+    gm_teleport: GmTeleport         = 0x13,
+    stop_meditation: StopMeditation = 0x2F,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !ActionPayload {
@@ -44,9 +47,9 @@ pub const ActionPayload = union(enum(u16)) {
                 const T = @FieldType(ActionPayload, field.name);
                 const hex = reader.buffered();
                 const payload = try codec.deserialize(T, reader, arena);
-                print("0x{x:0>2}: <- {s}\n", .{ opcode, shortTypeName(T) });
-                print("    hex: {X}\n", .{hex});
-                print("    {any}\n", .{payload});
+                print("    0x{x:0>2}: <- {s}\n", .{ opcode, shortTypeName(T) });
+                print("      hex: {X}\n", .{hex});
+                print("      {any}\n", .{payload});
                 if (reader.bufferedLen() > 0) {
                     print("WARNING: [Actions] {any} has some leftover data: {X}\n", .{ T, reader.buffered() });
                 }
@@ -58,14 +61,6 @@ pub const ActionPayload = union(enum(u16)) {
 
         reader.toss(payload_len);
         return error.UnknownOpcode;
-    }
-
-    fn deinit(self: *Action) void {
-        switch (self) {
-            inline else => |payload| {
-                if (@hasDecl(@TypeOf(payload), "deinit")) payload.deinit();
-            },
-        }
     }
 };
 
@@ -91,3 +86,10 @@ const GetBaseInfo = struct {
     unk2: u8,
     null: u8,
 };
+
+const GmTeleport = struct {
+    pos: Vec3,
+};
+
+const StopMeditation = struct {};
+const Respawn = struct {};
