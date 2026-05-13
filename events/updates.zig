@@ -4,7 +4,7 @@ const Writer = std.Io.Writer;
 
 const codec = @import("../protocol/codec.zig");
 const utils = @import("../protocol/utils.zig");
-const Vec3 = @import("../world/utils.zig").Vec3;
+const Vec3 = @import("../protocol/types.zig").Vec3;
 const character = @import("../world/character.zig");
 
 const FixedArray = utils.FixedArray;

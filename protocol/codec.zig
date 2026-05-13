@@ -225,7 +225,7 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T) !void {
             if (T != f32) {
                 @compileError("Float type " ++ @typeName(T) ++ " is not writable, only f32 are supported");
             }
-            try writer.writeInt(u32, @intFromFloat(value * 16777216.0), .little);
+            try writer.writeInt(u32, @bitCast(value), .little);
         },
         .bool => {
             try writer.writeByte(if (value) 1 else 0);
@@ -280,7 +280,7 @@ pub fn deserialize(comptime T: type, reader: *Reader, arena: std.mem.Allocator) 
             if (T != f32) {
                 @compileError("Float type " ++ @typeName(T) ++ " is not readable, only f32 are supported");
             }
-            return @as(f32, @floatFromInt(try reader.takeInt(u32, .little))) / 16777216.0;
+            return @as(f32, @bitCast(try reader.takeInt(u32, .little)));
         },
         .bool => {
             return try reader.takeByte() == 1;

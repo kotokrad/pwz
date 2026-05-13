@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Vec3 = @import("utils.zig").Vec3;
+const Vec3 = @import("../protocol/types.zig").Vec3;
 const FixedArray = @import("../protocol/utils.zig").FixedArray;
 const String = @import("../protocol/utils.zig").String;
 

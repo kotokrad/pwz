@@ -4,7 +4,6 @@ const std = @import("std");
 
 const utils = @import("utils.zig");
 const codec = @import("codec.zig");
-const Vec3 = @import("../world/utils.zig").Vec3;
 const character = @import("../world/character.zig");
 
 const FixedArray = utils.FixedArray;
@@ -13,6 +12,26 @@ const EndianTable = utils.EndianTable;
 const UTF16String = codec.UTF16String;
 const copyShallow = utils.copyShallow;
 const copyDeep = utils.copyDeep;
+
+pub const Vec3 = struct {
+    x: f32,
+    y: f32,
+    z: f32,
+
+    pub fn write(self: Vec3, writer: *std.Io.Writer) !void {
+        try writer.writeInt(u32, @bitCast((self.x - 400) * 10), .little);
+        try writer.writeInt(u32, @bitCast(self.z * 10), .little);
+        try writer.writeInt(u32, @bitCast((self.y - 550) * 10), .little);
+    }
+
+    pub fn read(reader: *std.Io.Reader, arena: std.mem.Allocator) !Vec3 {
+        _ = arena;
+        const x = @as(f32, @bitCast(try reader.takeInt(u32, .little))) / 10 + 400;
+        const z = @as(f32, @bitCast(try reader.takeInt(u32, .little))) / 10;
+        const y = @as(f32, @bitCast(try reader.takeInt(u32, .little))) / 10 + 550;
+        return .{ .x = x, .y = y, .z = z };
+    }
+};
 
 pub const ErrorCode = enum(u8) {
     // zig fmt: off

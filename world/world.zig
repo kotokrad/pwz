@@ -2,7 +2,6 @@ const std = @import("std");
 const print = std.debug.print;
 
 const FixedArray = @import("../protocol/utils.zig").FixedArray;
-const utils = @import("utils.zig");
 const character = @import("character.zig");
 const types = @import("../protocol/types.zig");
 const events = @import("../events/events.zig");
@@ -13,7 +12,7 @@ const Message = events.Message;
 const Action = events.Action;
 const Update = events.Update;
 const Character = character.Character;
-const Vec3 = utils.Vec3;
+const Vec3 = types.Vec3;
 
 pub const CharIds = struct {
     chars: [8]u8,

@@ -6,7 +6,7 @@ const Reader = std.Io.Reader;
 const channel = @import("channel.zig");
 const codec = @import("../protocol/codec.zig");
 const shortTypeName = @import("../protocol/utils.zig").shortTypeName;
-const Vec3 = @import("../world/utils.zig").Vec3;
+const Vec3 = @import("../protocol/types.zig").Vec3;
 
 const Channel = channel.Channel;
 

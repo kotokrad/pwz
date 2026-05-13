@@ -20,7 +20,6 @@ const serialize = codec.serialize;
 const writeCuint = codec.writeCuint;
 
 const domain = struct {
-    const Vec3 = @import("../world/utils.zig").Vec3;
     const EquipmentItem = @import("../world/character.zig").EquipmentItem;
     const InventoryItem = @import("../world/character.zig").InventoryItem;
 };
