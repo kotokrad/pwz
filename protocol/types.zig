@@ -121,13 +121,13 @@ pub const BattleMapLand = struct {
 
 pub const ChatType = enum(u8) {
     // zig fmt: off
-    local = 0,
-    world = 1,
-    group = 2,
-    guild = 3,
-    unk   = 4, // "Emotion"? wth
-    trade = 7,
-    gm    = 9,
-    horn  = 12,
+    local   = 0,
+    world   = 1,
+    group   = 2,
+    faction = 3,
+    unk     = 4, // "Emotion"? wth
+    trade   = 7,
+    gm      = 9,
+    horn    = 12,
     // zig fmt: on
 };

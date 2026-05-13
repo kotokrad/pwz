@@ -36,6 +36,7 @@ const AuthState = struct {
 
 pub const Session = struct {
     id: ?u32 = null,
+    char_id: ?u32 = null,
     io: Io,
     gpa: std.mem.Allocator,
     arena: std.mem.Allocator, // Lives the whole session
@@ -128,6 +129,8 @@ pub fn start(
     print("INFO: [Session] Client {f} connected\n", .{stream.socket.address});
     startSession(io, gpa, stream, messages_tx, actions_tx) catch |err| {
         print("ERROR: [Session] Client {f} disconnected with error: {}\n", .{ stream.socket.address, err });
+        stream.shutdown(io, .both) catch {};
+        stream.close(io);
     };
 }
 

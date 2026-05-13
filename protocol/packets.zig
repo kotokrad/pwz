@@ -31,21 +31,22 @@ pub fn Owned(comptime T: type) type {
 
 pub const InPacket = union(enum(u16)) {
     // zig fmt: off
-    gamedata: ActionPayload                  = 0x22,
-    keep_alive: KeepAlive                    = 0x5A,
-    login_request: LoginRequest              = 0x03,
-    key_exchange: KeyExchange                = 0x02,
-    role_list: RoleList                      = 0x52,
-    select_role: SelectRole                  = 0x46,
-    enter_world: EnterWorld                  = 0x48,
-    get_ui_config: GetUIConfig               = 0x68,
-    get_friends: GetFriends                  = 0xCE,
-    get_saved_msg: GetSavedMsg               = 0xD9,
-    get_help_states: GetHelpStates           = 0x82,
-    battle_get_map: BattleGetMap             = 0x352,
-    check_new_mail: CheckNewMail             = 0x1068,
-    send_chat_message: SendChatMessage       = 0x4F,
-    send_private_message: SendPrivateMessage = 0x60,
+    gamedata: ActionPayload         = 0x22,
+    keep_alive: KeepAlive           = 0x5A,
+    login_request: LoginRequest     = 0x03,
+    key_exchange: KeyExchange       = 0x02,
+    role_list: RoleList             = 0x52,
+    select_role: SelectRole         = 0x46,
+    enter_world: EnterWorld         = 0x48,
+    get_ui_config: GetUIConfig      = 0x68,
+    get_friends: GetFriends         = 0xCE,
+    get_saved_msg: GetSavedMsg      = 0xD9,
+    get_help_states: GetHelpStates  = 0x82,
+    battle_get_map: BattleGetMap    = 0x352,
+    check_new_mail: CheckNewMail    = 0x1068,
+    public_message: PublicMessage   = 0x4F,
+    private_message: PrivateMessage = 0x60,
+    faction_message: FactionMessage = 0x12C3,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !InPacket {
@@ -99,8 +100,8 @@ pub const OutPacket = union(enum(u16)) {
     get_saved_msg_re: GetSavedMsgRe     = 0xDA,
     get_help_states_re: GetHelpStatesRe = 0x83,
     battle_get_map_re: BattleGetMapRe   = 0x353,
-    world_chat: WorldChat               = 0x50,
-    chat_message: ChatMessage           = 0x85,
+    public_chat: PublicChat             = 0x50,
+    world_chat: WorldChat               = 0x85,
     // zig fmt: on
 
     pub fn write(self: OutPacket, writer: *Writer, scratch: std.mem.Allocator) !void {
@@ -119,8 +120,10 @@ pub const OutPacket = union(enum(u16)) {
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
 
-                print("0x{X:0>4}: -> {s}\n", .{ opcode, utils.shortTypeName(T) });
-                // print("{any}\n", .{variant});
+                if (T != Update) {
+                    print("0x{X:0>4}: -> {s}\n", .{ opcode, utils.shortTypeName(T) });
+                    // print("{any}\n", .{variant});
+                }
             },
         }
     }
@@ -197,7 +200,7 @@ pub const SelectRoleRe = struct {
 };
 
 pub const EnterWorld = struct {
-    role_id: u32,
+    char_id: u32,
     provider_link_id: u32,
     locktime: u32,
     timeout: u32,
@@ -207,7 +210,7 @@ pub const EnterWorld = struct {
 };
 
 pub const GetUIConfig = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
@@ -217,7 +220,7 @@ pub const GetUIConfigRe = struct {
     unk1: u32 = 0xf01,
     unk2: u16 = 0x200,
     unk3: u16 = 0xe01,
-    // role_id: u32,
+    // char_id: u32,
     // localsid: u32,
     data: FixedArray(u8, 512),
     pub const endian: EndianTable(@This(), .little) = .{
@@ -228,22 +231,22 @@ pub const GetUIConfigRe = struct {
 };
 
 pub const GetFriends = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
 
 pub const GetFriendsRe = struct {
-    role_id: u32,
+    char_id: u32,
     empty_array_len1: u8 = 0,
     empty_array_len2: u8 = 0,
     empty_array_len3: u8 = 0,
     localsid: u32,
-    pub const endian: EndianTable(@This(), .little) = .{ .role_id = .big };
+    pub const endian: EndianTable(@This(), .little) = .{ .char_id = .big };
 };
 
 pub const GetSavedMsg = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
@@ -251,28 +254,28 @@ pub const GetSavedMsg = struct {
 pub const GetSavedMsgRe = struct {
     result: u8 = 0,
     empty_array_len1: u8 = 0,
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
-    pub const endian: EndianTable(@This(), .little) = .{ .role_id = .big };
+    pub const endian: EndianTable(@This(), .little) = .{ .char_id = .big };
 };
 
 pub const GetHelpStates = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
 
 pub const GetHelpStatesRe = struct {
     result: u8 = 0,
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     data: FixedArray(u8, 128),
-    pub const endian: EndianTable(@This(), .little) = .{ .role_id = .big, .localsid = .big };
+    pub const endian: EndianTable(@This(), .little) = .{ .char_id = .big, .localsid = .big };
 };
 
 /// Client sends it every time you walk into another zone
 pub const BattleGetMap = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
@@ -290,22 +293,25 @@ pub const BattleGetMapRe = struct {
 };
 
 pub const CheckNewMail = struct {
-    role_id: u32,
+    char_id: u32,
     localsid: u32,
     pub const endian: EndianTable(@This(), .little) = .{ .localsid = .big };
 };
 
+/// Send public message
+///
 /// TODO: implement emoji packs:
 /// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3000 3E00 - default pack 🙂
 /// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3100 3E00 - default pack 😁
-pub const SendChatMessage = struct {
+pub const PublicMessage = struct {
     chat: types.ChatType,
     unk1: u8,
-    role_id: u32,
+    char_id: u32,
     unk2: u32,
     message: UTF16String,
 };
 
+/// Send private message
 /// Somewhere it might have a flag saying that
 /// the recepient is in the friend list.
 /// Message to a friend is pink instead of blue
@@ -313,7 +319,7 @@ pub const SendChatMessage = struct {
 ///
 /// `unk2` might be a `to_id` if you message by clicking on someone
 /// instead of entering the name manually? but why?
-pub const SendPrivateMessage = struct {
+pub const PrivateMessage = struct {
     unk1: u16, // 00E2
     from: UTF16String,
     from_id: u32,
@@ -322,28 +328,39 @@ pub const SendPrivateMessage = struct {
     message: UTF16String,
 };
 
+/// Send message to the faction chat
+pub const FactionMessage = struct {
+    unk1: u16 = 0,
+    char_id: u32,
+    message: UTF16String,
+    unk2: u32 = 0,
+};
+
+/// Receive World chat message
+///
 /// Can be used for a normal chat
 /// with the character name specified in `from`
-/// If `role_id = 0`, the name is not shown
-pub const ChatMessage = struct {
+/// If `char_id = 0`, the name is not shown
+pub const WorldChat = struct {
     chat: types.ChatType,
     null: u8 = 0,
-    role_id: u32 = 0,
+    char_id: u32 = 0,
     from: UTF16String,
     message: UTF16String,
     unk1: u32 = 0,
     unk2: u8 = 0,
 };
 
-/// Not sure how it is different from `ChatMessage`.
-/// If `role_id = 0`, the name is not shown
-/// With other `role_id`s, message is just not visible
+/// Receive public chat message
 ///
+/// Not sure how it is different from `WorldChat`.
+/// If `char_id = 0`, the name is not shown
+/// With other `char_id`s, message is just not visible
 /// TODO: test it more
-pub const WorldChat = struct {
+pub const PublicChat = struct {
     chat: types.ChatType,
     null: u8 = 0,
-    role_id: u32 = 0,
+    char_id: u32 = 0,
     message: UTF16String,
     unk1: u32 = 0,
     unk2: u8 = 0,

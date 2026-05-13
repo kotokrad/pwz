@@ -53,7 +53,7 @@ fn handleRoleList(session: *Session, payload: RoleList) !void {
 }
 
 fn handleSelectRole(session: *Session, payload: SelectRole) !void {
-    _ = payload;
+    session.char_id = payload.char_id;
     const select_role_re = SelectRoleRe{
         .gm_code = .{
             // zig fmt: off

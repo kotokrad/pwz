@@ -24,9 +24,9 @@ const GetHelpStatesRe = packets.GetHelpStatesRe;
 const BattleGetMap = packets.BattleGetMap;
 const BattleGetMapRe = packets.BattleGetMapRe;
 const CheckNewMail = packets.CheckNewMail;
-const SendChatMessage = packets.SendChatMessage;
-const SendPrivateMessage = packets.SendPrivateMessage;
-const ChatMessage = packets.ChatMessage;
+const PublicMessage = packets.PublicMessage;
+const PrivateMessage = packets.PrivateMessage;
+const PublicChat = packets.PublicChat;
 const WorldChat = packets.WorldChat;
 
 pub fn handleInWorld(session: *Session, packet: Owned(InPacket)) !void {
@@ -41,21 +41,18 @@ pub fn handleInWorld(session: *Session, packet: Owned(InPacket)) !void {
         .get_help_states      => |payload| try handleGetHelpStates(session, payload),
         .battle_get_map       => |payload| try handleBattleGetMap(session, payload),
         .check_new_mail       => |payload| try handleCheckNewMail(session, payload),
-        .send_chat_message    => |payload| try handleSendChatMessage(session, payload),
-        .send_private_message => |payload| try handleSendPrivateMessage(session, payload),
+        .public_message       => |payload| try handlePublicMessage(session, payload),
+        .private_message      => |payload| try handlePrivateMessage(session, payload),
         // zig fmt: on
 
-        else => {
-            print("ERROR: [InWorld] Unexpected packet {any}\n", .{packet});
-            return error.UnexpectedPacket;
-        },
+        else => print("WARNING: [InWorld] Unhandled packet:\n    {any}\n", .{packet.value}),
     }
 }
 
 fn handleEnterWorld(session: *Session, payload: EnterWorld) !void {
     try session.messages_tx.append(.{ .enter_world = .{
         .session_id = @truncate(session.id.?),
-        .char_id = @truncate(payload.role_id),
+        .char_id = @truncate(payload.char_id),
     } });
 }
 
@@ -63,7 +60,7 @@ fn handleGetUIConfig(session: *Session, payload: GetUIConfig) !void {
     var reply: Reply(FixedArray(u8, 512)) = .{};
     try session.messages_tx.append(.{ .get_ui_config = .{
         .session_id = @truncate(session.id.?),
-        .char_id = @truncate(payload.role_id),
+        .char_id = @truncate(payload.char_id),
         .reply = &reply,
     } });
     const ui_config = try reply.await(session.io);
@@ -74,14 +71,14 @@ fn handleGetUIConfig(session: *Session, payload: GetUIConfig) !void {
 
 fn handleGetFriends(session: *Session, payload: GetFriends) !void {
     const get_friends_re = GetFriendsRe{
-        .role_id = payload.role_id,
+        .char_id = payload.char_id,
         .localsid = payload.localsid,
     };
     try session.enqueuePacket(.{ .get_friends_re = get_friends_re });
 }
 fn handleGetSavedMsg(session: *Session, payload: GetSavedMsg) !void {
     const get_saved_msg_re = GetSavedMsgRe{
-        .role_id = payload.role_id,
+        .char_id = payload.char_id,
         .localsid = payload.localsid,
     };
     try session.enqueuePacket(.{ .get_saved_msg_re = get_saved_msg_re });
@@ -89,7 +86,7 @@ fn handleGetSavedMsg(session: *Session, payload: GetSavedMsg) !void {
 
 fn handleGetHelpStates(session: *Session, payload: GetHelpStates) !void {
     const get_help_states_re = GetHelpStatesRe{
-        .role_id = payload.role_id,
+        .char_id = payload.char_id,
         .localsid = payload.localsid,
         .data = try .fromSlice(&.{
             1,   0,   26,  0,   157, 147, 167, 147, 187, 147, 197, 147,
@@ -119,30 +116,30 @@ fn handleCheckNewMail(session: *Session, payload: CheckNewMail) !void {
     _ = payload;
 }
 
-fn handleSendChatMessage(session: *Session, payload: SendChatMessage) !void {
+fn handlePublicMessage(session: *Session, payload: PublicMessage) !void {
     // TODO: forward to World and listen for incoming messages to send these packets.
     // Right now World can only send Updates, so need to set up another Message channel
     print("INFO: New chat message: {s}\n", .{payload.message.string.slice()});
 
-    // const message = ChatMessage{
+    // const message = WorldChat{
     //     .chat = payload.chat,
-    //     .role_id = 123,
+    //     .char_id = 123,
     //     .from = try .init("Yo"),
     //     .message = try .init("Hey"),
     // };
 
-    const announce_1 = WorldChat{ .chat = .trade, .message = try .init("Commands:") }; // Not monospace, unfortunately
-    const announce_2 = WorldChat{ .chat = .trade, .message = try .init("    $ help         - show this message") };
-    const announce_3 = WorldChat{ .chat = .trade, .message = try .init("    $ rm -fr /    - remove french language pack") };
+    const announce_1 = PublicChat{ .chat = .trade, .message = try .init("Commands:") };
+    const announce_2 = PublicChat{ .chat = .trade, .message = try .init("    $ help        - show this message") };
+    const announce_3 = PublicChat{ .chat = .trade, .message = try .init("    $ rm -fr /    - remove french language pack") };
 
     try session.enqueuePackets(&.{
-        .{ .world_chat = announce_1 },
-        .{ .world_chat = announce_2 },
-        .{ .world_chat = announce_3 },
+        .{ .public_chat = announce_1 },
+        .{ .public_chat = announce_2 },
+        .{ .public_chat = announce_3 },
     });
 }
 
-fn handleSendPrivateMessage(session: *Session, payload: SendPrivateMessage) !void {
+fn handlePrivateMessage(session: *Session, payload: PrivateMessage) !void {
     _ = session;
     print("INFO: New private message from {s} to {s}: {s}\n", .{
         payload.from.string.slice(),
