@@ -24,7 +24,7 @@ fn OctetsGeneric(
     return struct {
         value: T,
 
-        const U = std.meta.Int(.unsigned, @intFromEnum(len_prefix_size));
+        const S = @Int(.unsigned, @intFromEnum(len_prefix_size));
         const Self = @This();
         pub fn init(value: T) Self {
             return .{ .value = value };
@@ -39,14 +39,14 @@ fn OctetsGeneric(
             if (len_prefix_size == .cuint) {
                 try writeCuint(writer, payload.len);
             } else {
-                try writer.writeInt(U, @truncate(payload.len), len_prefix_endian);
+                try writer.writeInt(S, @truncate(payload.len), len_prefix_endian);
             }
 
             try writer.writeAll(payload);
         }
 
         pub fn read(reader: *Reader, arena: std.mem.Allocator) !Self {
-            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(U, len_prefix_endian);
+            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(S, len_prefix_endian);
             const buf = try reader.take(len);
             var buf_reader = Reader.fixed(buf);
             const value = try deserialize(T, &buf_reader, arena);
@@ -78,7 +78,7 @@ fn VecGeneric(
     return struct {
         list: FixedArray(T, cap),
 
-        const U = std.meta.Int(.unsigned, @intFromEnum(len_prefix_size));
+        const S = @Int(.unsigned, @intFromEnum(len_prefix_size));
         const Self = @This();
         pub fn init(list: []const T) !Self {
             return .{ .list = try .fromSlice(list) };
@@ -88,7 +88,7 @@ fn VecGeneric(
             if (len_prefix_size == .cuint) {
                 try writeCuint(writer, self.list.len);
             } else {
-                try writer.writeInt(U, @truncate(self.list.len), len_prefix_endian);
+                try writer.writeInt(S, @truncate(self.list.len), len_prefix_endian);
             }
             if (T == u8) {
                 try writer.writeAll(self.list);
@@ -98,7 +98,7 @@ fn VecGeneric(
         }
 
         pub fn read(reader: *Reader, arena: std.mem.Allocator) !Self {
-            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(U, len_prefix_endian);
+            const len = if (len_prefix_size == .cuint) try readCuint(reader) else try reader.takeInt(S, len_prefix_endian);
             if (T == u8) {
                 return try reader.take(len);
             } else {

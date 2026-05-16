@@ -5,7 +5,6 @@ const FixedArray = @import("../protocol/utils.zig").FixedArray;
 const String = @import("../protocol/utils.zig").String;
 
 const DateTime = u32;
-const CustomData = FixedArray(u8, 256);
 
 pub const MAX_EQUIPMENT_ITEMS = 22;
 pub const MAX_SKILLS = 32;
@@ -66,6 +65,8 @@ pub const Skill = struct {
     null: u8 = 0,
 };
 
+/// When `invalid` flags set, client ignores the RoleWorldInfo packet
+/// They might depend on other flags? Only tested in isolation
 pub const CharacterFlags = packed struct(u32) {
     // zig fmt: off
     unk00: bool         = false,
@@ -112,7 +113,7 @@ pub const Character = struct {
     level: u16 = 0,
     cultivation: u16 = 0,
     name: String,
-    custom_data: CustomData,
+    custom_data: FixedArray(u8, 256),
     equipment: FixedArray(EquipmentItem, MAX_EQUIPMENT_ITEMS),
     is_active: bool = true,
     delete_time: DateTime = 0,
@@ -220,7 +221,7 @@ pub fn getExampleChar() !Character {
         }),
         .equipment = try .fromSlice(&.{
             .{
-                .id = 14903,
+                .item_id = 14903,
                 .slot = EquipmentSlot.weapon,
                 .count = 1,
                 .max_count = 1,
@@ -244,7 +245,8 @@ pub fn getExampleChar() !Character {
         }),
         .create_time = 1_753_704_763,
         .lastlogin_time = 1_753_704_763,
-        .position = .{ .x = 111, .y = 40, .z = 40 },
+        // .position = .{ .x = 111, .y = 40, .z = 40 }, // GM zone
+        .position = .{ .x = 330, .y = 440, .z = 40 }, // 19
 
         .angle = 120,
 

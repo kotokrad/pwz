@@ -116,23 +116,13 @@ pub fn loop(
                 .enter_world => |payload| {
                     print("INFO: [World] player is online: {}\n", .{payload.char_id});
                     world.sessions[payload.session_id].?.char_id = payload.char_id;
-                    const session = world.sessions[payload.session_id];
-                    const char = world.characters[payload.char_id];
-                    if (session == null) {
-                        print("ERROR: [World] session {} does not exist\n", .{payload.session_id});
-                        continue;
-                    }
-                    if (char == null) {
-                        print("ERROR: [World] charater {} does not exist\n", .{payload.char_id});
-                        continue;
-                    }
-
-                    const updates_tx = session.?.updates_tx;
+                    const ctx = get_message_context(&world, payload) catch continue;
+                    const updates_tx, const char = ctx;
 
                     // try updates_tx.?.appendMany(
-                    try updates_tx.append(.{ .role_status_info = .from(char.?) });
-                    try updates_tx.append(.{ .role_world_info = .from(char.?) });
-                    try updates_tx.append(.{ .nearby_players = try .fromSlice(&.{.from(char.?)}) });
+                    try updates_tx.append(.{ .role_status_info = .from(char) });
+                    try updates_tx.append(.{ .role_world_info = .from(char) });
+                    try updates_tx.append(.{ .nearby_players = try .fromSlice(&.{.from(char)}) });
                     try updates_tx.append(.{ .server_config_info = .init() });
                     try updates_tx.append(.{ .unknown_010b = .{} });
                     try updates_tx.append(.{ .safety_lock_status = .init() });
@@ -141,18 +131,10 @@ pub fn loop(
                     world.players_online[payload.char_id] = true;
                 },
                 .get_ui_config => |payload| {
-                    const session = world.sessions[payload.session_id];
-                    const char = world.characters[payload.char_id];
-                    if (session == null) {
-                        print("ERROR: [World] session {} does not exist\n", .{payload.session_id});
-                        continue;
-                    }
-                    if (char == null) {
-                        print("ERROR: [World] charater {} does not exist\n", .{payload.char_id});
-                        continue;
-                    }
+                    const ctx = get_message_context(&world, payload) catch continue;
+                    _, const char = ctx;
 
-                    payload.reply.set(io, char.?.ui_config);
+                    payload.reply.set(io, char.ui_config);
                 },
             }
         }
@@ -192,17 +174,42 @@ pub fn loop(
                     try updates_tx.append(.{ .unknown_69 = try .init() });
                 },
                 .gm_teleport => |payload| {
-                    // Doesn't work because of that 0x43 thing
-                    try updates_tx.append(.{ .stop = .{
-                        .char_id = char.?.char_id,
-                        .pos = payload.pos,
-                    } });
+                    var updated_info: upd.RoleWorldInfo = .from(char.?);
+                    updated_info.position = payload.pos;
+                    try updates_tx.append(.{ .role_world_info = updated_info });
+
+                    // This doesn't work because of that 0x43 thing
+                    // try updates_tx.append(.{ .stop = .{
+                    //     .char_id = char.?.char_id,
+                    //     .pos = payload.pos,
+                    // } });
                 },
                 .stop_meditation => {},
                 .respawn => {},
+                .enter_dungeon => {},
             }
         }
 
         try io.sleep(.fromMilliseconds(50), .awake);
     }
+}
+
+const EventCtx = struct { *Channel(Update), Character };
+
+fn get_message_context(
+    world: *const World,
+    payload: anytype,
+) !EventCtx {
+    const session = world.sessions[payload.session_id];
+    const char = world.characters[payload.char_id];
+    if (session == null) {
+        print("ERROR: [World] session {} does not exist\n", .{payload.session_id});
+        return error.SessionNotExists;
+    }
+    if (char == null) {
+        print("ERROR: [World] charater {} does not exist\n", .{payload.char_id});
+        return error.CharacterNotExists;
+    }
+    const updates_tx = session.?.updates_tx;
+    return .{ updates_tx, char.? };
 }

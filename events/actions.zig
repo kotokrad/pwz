@@ -28,6 +28,7 @@ pub const ActionPayload = union(enum(u16)) {
     get_base_info: GetBaseInfo      = 0x27,
     gm_teleport: GmTeleport         = 0x13,
     stop_meditation: StopMeditation = 0x2F,
+    enter_dungeon: EnterDungeon     = 0x56,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !ActionPayload {
@@ -93,3 +94,9 @@ const GmTeleport = struct {
 
 const StopMeditation = struct {};
 const Respawn = struct {};
+
+// 0D0000006B000000
+const EnterDungeon = struct {
+    unk_id: u32,
+    dungeon_id: u32, // 19lvl ids are 105-106-107
+};
