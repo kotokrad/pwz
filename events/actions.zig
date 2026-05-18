@@ -23,13 +23,16 @@ pub const Action = struct { SessionId, ActionPayload };
 
 pub const ActionPayload = union(enum(u16)) {
     // zig fmt: off
-    move: Move                      = 0x00,
-    stop: Stop                      = 0x07,
-    respawn: Respawn                = 0x04,
-    get_base_info: GetBaseInfo      = 0x27,
-    gm_teleport: GmTeleport         = 0x13,
-    stop_meditation: StopMeditation = 0x2F,
-    enter_dungeon: EnterDungeon     = 0x56,
+    move: Move                           = 0x00,
+    stop: Stop                           = 0x07,
+    respawn: Respawn                     = 0x04,
+    get_base_info: GetBaseInfo           = 0x27,
+    gm_teleport: GmTeleport              = 0x13,
+    stop_meditation: StopMeditation      = 0x2F,
+    enter_dungeon: EnterDungeon          = 0x56,
+    move_item: MoveItem                  = 0x0C,
+    move_equipment: MoveEquipment        = 0x10,
+    take_off_equipment: TakeOffEquipment = 0x11,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !ActionPayload {
@@ -66,21 +69,35 @@ pub const ActionPayload = union(enum(u16)) {
     }
 };
 
+const MoveFlags = packed struct(u8) {
+    is_walking: bool = true,
+    falling1: u1 = 0, // ??
+    falling2: u1 = 0, // ??
+    is_jumping: bool = false,
+    unk3: u1 = 0,
+    always_on: u1 = 1,
+    is_flying: bool = false,
+    unk4: u1 = 0,
+};
+
 const Move = struct {
     pos: Vec3,
     dest: Vec3,
     unk1: u16,
     unk2: u16,
-    unk3: u8,
+    flags: MoveFlags,
     counter: u16,
 };
 
 const Stop = struct {
     pos: Vec3,
-    unk1: u16,
-    unk2: u16,
+    unk1: u8,
+    unk2: u8,
+    angle: u8,
+    flags: MoveFlags,
     counter: u16,
-    unk4: u16,
+    unk5: u8,
+    unk6: u8,
 };
 
 const GetBaseInfo = struct {
@@ -100,4 +117,19 @@ const Respawn = struct {};
 const EnterDungeon = struct {
     unk_id: u32,
     dungeon_id: u32, // 19lvl ids are 105-106-107
+};
+
+const MoveItem = struct {
+    slot_from: u8,
+    slot_to: u8,
+};
+
+const MoveEquipment = struct {
+    slot_from: u8,
+    slot_to: u8,
+};
+
+const TakeOffEquipment = struct {
+    slot_from: u8,
+    slot_to: u8,
 };

@@ -148,6 +148,9 @@ pub fn loop(
                 .stop_meditation => {},
                 .respawn => {},
                 .enter_dungeon => {},
+                .move_item => {},
+                .move_equipment => {},
+                .take_off_equipment => {},
             }
         }
 

@@ -64,24 +64,58 @@ pub const ChallengeData = struct {
     random_bytes: [8]u8,
 };
 
+pub const Equipment = struct {
+    items: BoundedArray(EquipmentItem, Item.MAX_EQUIPMENT_ITEMS),
+
+    pub fn fromItems(items: []const Item) !Equipment {
+        var buf: [29]EquipmentItem = undefined;
+        var result: std.ArrayList(EquipmentItem) = .initBuffer(&buf);
+        for (items) |item| if (item.inventory_type == .equipment) {
+            try result.appendBounded(.from(item));
+        };
+        return .{ .items = try .fromSlice(result.items) };
+    }
+};
+
+pub const EquipmentItem = struct {
+    item_id: u32,
+    slot: inventory.EquipmentSlot,
+    count: u32,
+    max_count: u32,
+    data: BoundedArray(u8, 256),
+    proc_type: u32,
+    expire_date: u32,
+    guid1: u32,
+    guid2: u32,
+    mask: u32,
+
+    pub const endian: EndianTable(@This(), .big) = .{};
+
+    pub fn from(item: Item) EquipmentItem {
+        return copyShallow(Item, EquipmentItem, item, .{
+            .slot = @enumFromInt(item.slot),
+        });
+    }
+};
+
 pub const RoleInfo = struct {
-    char_id: u32,
+    id: u32,
     gender: u8,
     race: u8,
     class: u8,
     level: u32,
     cultivation: u32,
-    name: UTF16String,
-    custom_data: FixedArray(u8, 256),
-    equipment: FixedArray(character.EquipmentItem, character.MAX_EQUIPMENT_ITEMS),
+    name: UTF16String(16),
+    custom_data: BoundedArray(u8, 256),
+    equipment: Equipment,
     is_active: bool,
     delete_time: u32,
     create_time: u32,
     lastlogin_time: u32,
     position: Vec3,
     world_id: u32,
-    custom_status: FixedArray(u8, 32),
-    character_mode: FixedArray(u8, 8),
+    custom_status: BoundedArray(u8, 32),
+    character_mode: BoundedArray(u8, 8),
     referrer_id: u32,
     cash_add: u32,
 
@@ -96,12 +130,12 @@ pub const RoleInfo = struct {
         .cash_add = .big,
     };
 
-    pub fn from(char: character.Character) !RoleInfo {
+    pub fn from(char: character.Character, items: []const Item) !RoleInfo {
         return try copyDeep(character.Character, RoleInfo, char, .{
-            .char_id = char.char_id,
             .level = char.level,
             .cultivation = char.cultivation,
-            .name = .fromFixedString(char.name),
+            .name = .fromString(char.name),
+            .equipment = try .fromItems(items),
             .world_id = 1,
             .custom_status = try .fromSlice(&.{}),
             .character_mode = try .fromSlice(&.{ 1, 0, 0, 0, 1, 0, 0, 0 }),
@@ -122,7 +156,7 @@ pub const BattleMapLand = struct {
     maxbonus: u32 = 0,
 };
 
-pub const ChatType = enum(u8) {
+pub const ChatChannel = enum(u8) {
     // zig fmt: off
     local   = 0,
     world   = 1,

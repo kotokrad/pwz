@@ -13,11 +13,13 @@ const EndianTable = utils.EndianTable;
 const copyShallow = utils.copyShallow;
 const OctetsU32LE = codec.OctetsU32LE;
 const VecU32LE = codec.VecU32LE;
+const Seq = codec.Seq;
 
 const Character = character.Character;
+const CharacterId = character.CharacterId;
 const CharacterFlags = character.CharacterFlags;
-const EquipmentItem = character.EquipmentItem;
-const InventoryItem = character.InventoryItem;
+const Item = inventory.Item;
+const InventoryType = inventory.InventoryType;
 
 /// `Updates` are mapped to `subpackets` that server sends
 /// to the client in a `Container` packet
@@ -95,7 +97,7 @@ pub const RoleStatusInfo = struct {
 pub const RoleWorldInfo = struct {
     experience: u32,
     spirit: u32,
-    char_id: u32,
+    id: u32,
     position: Vec3,
     crc: u16,
     custom_crc: u16,
@@ -105,7 +107,6 @@ pub const RoleWorldInfo = struct {
 
     pub fn from(char: Character) RoleWorldInfo {
         return copyShallow(Character, RoleWorldInfo, char, .{
-            .char_id = char.char_id,
             .crc = 0x15ac,
             .custom_crc = 0,
             .sec_level = 0,
@@ -132,7 +133,7 @@ const NearbyPlayer = struct {
     }
 };
 
-pub const NearbyPlayers = FixedArray(NearbyPlayer, 8);
+pub const NearbyPlayers = BoundedArray(NearbyPlayer, 8);
 
 pub const ServerConfigInfo = struct {
     world_id: u32,
@@ -224,10 +225,26 @@ pub const PlayerCombatStats = struct {
     }
 };
 
-const InventoryType = enum(u8) {
-    general = 0,
-    equipment = 1,
-    fashion = 5,
+pub const InventoryItem = struct {
+    slot: u32,
+    item_id: u32,
+    expire_date: u32,
+    proc_type: u32,
+    count: u32,
+    unk: u16,
+    data: codec.OctetsU16LE(Seq(u8, 256)),
+
+    pub const endian: EndianTable(@This(), .little) = .{
+        .unk = .big, // is it?
+    };
+
+    pub fn from(item: Item) InventoryItem {
+        return copyShallow(Item, InventoryItem, item, .{
+            .unk = 0,
+            // .unk = item.mask,
+            .data = .init(.init(item.data)),
+        });
+    }
 };
 
 pub const Inventory = struct {
@@ -235,15 +252,18 @@ pub const Inventory = struct {
     slot_count: u8 = 32,
     items: OctetsU32LE(VecU32LE(InventoryItem, 32)),
 
-        _ = char;
-    pub fn from(inv_type: InventoryType, char: Character) !Inventory {
-        switch (inv_type) {
-            .general => return .{ .type = inv_type, .items = .init(try .init(&.{})) },
-            .fashion => return .{ .type = inv_type, .items = .init(try .init(&.{})) },
-            .equipment => {
-                return .{ .type = inv_type, .items = .init(try .init(&.{})) };
-            },
-        }
+    pub fn from(inv_type: InventoryType, items: []const Item) !Inventory {
+        const slot_count: u8 = switch (inv_type) {
+            .general => Item.MAX_GENERAL_ITEMS,
+            .fashion => Item.MAX_FASHION_ITEMS,
+            .equipment => Item.MAX_EQUIPMENT_ITEMS,
+        };
+        var buf: [Item.MAX_GENERAL_ITEMS]InventoryItem = undefined;
+        var result: std.ArrayList(InventoryItem) = .initBuffer(&buf);
+        for (items) |item| if (item.inventory_type == inv_type) {
+            try result.appendBounded(.from(item));
+        };
+        return .{ .type = inv_type, .slot_count = slot_count, .items = .init(try .init(result.items)) };
     }
 };
 
@@ -260,7 +280,25 @@ pub const Money = struct {
     pub const endian: EndianTable(@This(), .big) = .{};
 };
 
-pub const Skills = VecU32LE(character.Skill, character.MAX_SKILLS);
+pub const Skill = struct {
+    skill_id: u16,
+    level: u16,
+    null: u8 = 0,
+
+    pub fn from(char: character.Skill) Skill {
+        return copyShallow(character.Skill, Skill, char, .{});
+    }
+};
+
+pub const Skills = struct {
+    items: VecU32LE(Skill, Character.MAX_SKILLS),
+
+    pub fn from(skills: []const character.Skill) !Skills {
+        var result: [Character.MAX_SKILLS]Skill = undefined;
+        for (skills, 0..) |skill, i| result[i] = .from(skill);
+        return .{ .items = try .init(result[0..skills.len]) };
+    }
+};
 
 pub const Unknown69 = struct {
     data: [34]u8,

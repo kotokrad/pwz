@@ -123,7 +123,9 @@ pub fn Seq(comptime T: type, comptime cap: usize) type {
 
         const Self = @This();
         pub fn write(self: Self, writer: *Writer) !void {
-            for (self.list.slice()) |item| {
+            if (T == u8) {
+                try writer.writeAll(self.list.slice());
+            } else for (self.list.slice()) |item| {
                 try serialize(T, writer, item);
             }
         }
@@ -138,42 +140,44 @@ pub fn Seq(comptime T: type, comptime cap: usize) type {
         //     return .{ .value = result };
         // }
 
-        pub fn init(value: T) Octets(T) {
-            return .{ .value = value };
+        pub fn init(list: BoundedArray(T, cap)) @This() {
+            return .{ .list = list };
         }
     };
 }
 
-pub const UTF16String = struct {
-    string: String,
-    const Self = @This();
+pub fn UTF16String(comptime cap: usize) type {
+    return struct {
+        string: String(cap),
+        const Self = @This();
 
-    pub fn write(self: Self, writer: *Writer) !void {
-        var buf: [128]u16 = undefined;
-        const len = try std.unicode.utf8ToUtf16Le(&buf, self.string.slice());
-        try writeCuint(writer, len * 2);
-        try writer.writeAll(std.mem.sliceAsBytes(buf[0..len]));
-    }
+        pub fn write(self: Self, writer: *Writer) !void {
+            var buf: [128]u16 = undefined;
+            const len = try std.unicode.utf8ToUtf16Le(&buf, self.string.slice());
+            try writeCuint(writer, len * 2);
+            try writer.writeAll(std.mem.sliceAsBytes(buf[0..len]));
+        }
 
-    pub fn read(reader: *Reader, arena: std.mem.Allocator) !UTF16String {
-        _ = arena;
-        const len = try readCuint(reader);
-        var utf16_buf: [128]u16 = undefined;
-        const data = try reader.take(len);
-        @memcpy(std.mem.sliceAsBytes(utf16_buf[0 .. len / 2]), data);
-        var utf8_buf: [384]u8 = undefined;
-        _ = try std.unicode.utf16LeToUtf8(&utf8_buf, utf16_buf[0 .. len / 2]);
-        return .{ .string = try .fromSlice(utf8_buf[0 .. len / 2]) };
-    }
+        pub fn read(reader: *Reader, arena: std.mem.Allocator) !Self {
+            _ = arena;
+            const len = try readCuint(reader);
+            var utf16_buf: [128]u16 = undefined;
+            const data = try reader.take(len);
+            @memcpy(std.mem.sliceAsBytes(utf16_buf[0 .. len / 2]), data);
+            var utf8_buf: [384]u8 = undefined;
+            _ = try std.unicode.utf16LeToUtf8(&utf8_buf, utf16_buf[0 .. len / 2]);
+            return .{ .string = try .fromSlice(utf8_buf[0 .. len / 2]) };
+        }
 
-    pub fn init(string: []const u8) !UTF16String {
-        return .{ .string = try .fromSlice(string) };
-    }
+        pub fn init(string: []const u8) !Self {
+            return .{ .string = try .fromSlice(string) };
+        }
 
-    pub fn fromFixedString(string: String) UTF16String {
-        return .{ .string = string };
-    }
-};
+        pub fn fromString(string: String(cap)) Self {
+            return .{ .string = string };
+        }
+    };
+}
 
 pub fn writeCuint(writer: *Writer, value: usize) !void {
     if (value < 0x80) {
@@ -231,21 +235,20 @@ pub fn serialize(comptime T: type, writer: *Writer, value: T) !void {
         .@"struct" => |info| {
             if (info.backing_integer) |BackingInt| {
                 try writer.writeInt(BackingInt, @bitCast(value), .big);
-            } else if (@hasDecl(overrides, shortTypeName(T)) and @hasDecl(@field(overrides, shortTypeName(T)), "write")) {
-                const override = @field(overrides, shortTypeName(T));
-                try override.write(value, writer);
             } else if (@hasDecl(T, "write")) {
                 try value.write(writer);
             } else {
                 inline for (info.fields) |f| {
                     const field = @field(value, f.name);
+                    // For integer field, trying to apply endianness override
+                    // specified in the `endian: EndianTable` declaration
+                    const endian = getEndianFor(T, f.name) orelse .little;
                     switch (@typeInfo(f.type)) {
-                        // For `int` field, trying to apply endianness override
-                        // First look for `endian: EndianTable` in the type itself,
-                        // otherwise check type override in the `overrides.zig`
                         .int => {
-                            const endian = getEndianFor(T, f.name) orelse overrides.getEndianFor(T, f.name) orelse .little;
                             try writer.writeInt(f.type, field, endian);
+                        },
+                        .@"enum" => |enum_info| {
+                            try writer.writeInt(enum_info.tag_type, @intFromEnum(field), endian);
                         },
                         else => {
                             try serialize(f.type, writer, field);
@@ -287,21 +290,21 @@ pub fn deserialize(comptime T: type, reader: *Reader, arena: std.mem.Allocator) 
             if (info.backing_integer) |BackingInt| {
                 const int = try reader.takeInt(BackingInt, .big);
                 return @bitCast(int);
-            } else if (@hasDecl(overrides, shortTypeName(T)) and @hasDecl(@field(overrides, shortTypeName(T)), "read")) {
-                const override = @field(overrides, shortTypeName(T));
-                return try override.read(reader, arena);
             } else if (@hasDecl(T, "read")) {
                 return try T.read(reader, arena);
             } else {
                 var result: T = undefined;
                 inline for (info.fields) |f| {
+                    // For integer field, trying to apply endianness override
+                    // specified in the `endian: EndianTable` declaration
+                    const endian = getEndianFor(T, f.name) orelse .little;
                     switch (@typeInfo(f.type)) {
                         .int => {
-                            // For `int` field, trying to apply endianness override
-                            // First look for `endian: EndianTable` in the type itself,
-                            // otherwise check type override in the `overrides.zig`
-                            const endian = getEndianFor(T, f.name) orelse overrides.getEndianFor(T, f.name) orelse .little;
                             @field(result, f.name) = try reader.takeInt(f.type, endian);
+                        },
+                        .@"enum" => |enum_info| {
+                            const int = try reader.takeInt(enum_info.tag_type, endian);
+                            @field(result, f.name) = @enumFromInt(int);
                         },
                         else => @field(result, f.name) = try deserialize(f.type, reader, arena),
                     }

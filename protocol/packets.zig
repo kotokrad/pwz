@@ -104,8 +104,8 @@ pub const OutPacket = union(enum(u16)) {
     world_chat: WorldChat               = 0x85,
     // zig fmt: on
 
-    pub fn write(self: OutPacket, writer: *Writer, scratch: std.mem.Allocator) !void {
-        var aw: Writer.Allocating = .init(scratch);
+    pub fn write(self: OutPacket, writer: *Writer, gpa: std.mem.Allocator) !void {
+        var aw: Writer.Allocating = .init(gpa);
         defer aw.deinit();
 
         switch (self) {
@@ -140,7 +140,7 @@ pub const KeepAlive = struct {
 
 pub const ServerError = struct {
     code: types.ErrorCode,
-    message: String,
+    message: String(32),
 };
 
 pub const Challenge = struct {
@@ -152,7 +152,7 @@ pub const Challenge = struct {
 };
 
 pub const LoginRequest = struct {
-    username: String,
+    username: String(16),
     hash: Octets([16]u8),
 };
 
@@ -187,7 +187,7 @@ pub const RoleListRe = struct {
     next_slot: u32,
     account_id: u32,
     session_id: u32,
-    characters: FixedArray(types.RoleInfo, 8),
+    characters: BoundedArray(types.RoleInfo, 8),
 };
 
 pub const SelectRole = struct {
@@ -222,7 +222,7 @@ pub const GetUIConfigRe = struct {
     unk3: u16 = 0xe01,
     // char_id: u32,
     // localsid: u32,
-    data: FixedArray(u8, 512),
+    data: BoundedArray(u8, 512),
     pub const endian: EndianTable(@This(), .little) = .{
         .unk1 = .big,
         .unk2 = .big,
@@ -269,7 +269,7 @@ pub const GetHelpStatesRe = struct {
     result: u8 = 0,
     char_id: u32,
     localsid: u32,
-    data: FixedArray(u8, 128),
+    data: BoundedArray(u8, 128),
     pub const endian: EndianTable(@This(), .little) = .{ .char_id = .big, .localsid = .big };
 };
 
@@ -284,7 +284,7 @@ pub const BattleGetMapRe = struct {
     result: u8 = 0,
     maxbid: u16 = 2000,
     status: u16 = 1,
-    lands: FixedArray(types.BattleMapLand, 1),
+    lands: BoundedArray(types.BattleMapLand, 1),
     bonus_item_id: u32 = 11208,
     bonus_count1: u32 = 150,
     bonus_count2: u32 = 200,
@@ -304,11 +304,11 @@ pub const CheckNewMail = struct {
 /// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3000 3E00 - default pack 🙂
 /// 00E0 3C00 3000 3E00 3C00 5700 3E00 3C00 3000 3A00 3100 3E00 - default pack 😁
 pub const PublicMessage = struct {
-    chat: types.ChatType,
+    channel: types.ChatChannel,
     unk1: u8,
     char_id: u32,
     unk2: u32,
-    message: UTF16String,
+    message: UTF16String(128),
 };
 
 /// Send private message
@@ -321,18 +321,18 @@ pub const PublicMessage = struct {
 /// instead of entering the name manually? but why?
 pub const PrivateMessage = struct {
     unk1: u16, // 00E2
-    from: UTF16String,
+    from: UTF16String(16),
     from_id: u32,
-    to: UTF16String,
+    to: UTF16String(16),
     unk2: u32 = 0, // maybe to_id?
-    message: UTF16String,
+    message: UTF16String(128),
 };
 
 /// Send message to the faction chat
 pub const FactionMessage = struct {
     unk1: u16 = 0,
     char_id: u32,
-    message: UTF16String,
+    message: UTF16String(128),
     unk2: u32 = 0,
 };
 
@@ -342,11 +342,11 @@ pub const FactionMessage = struct {
 /// with the character name specified in `from`
 /// If `char_id = 0`, the name is not shown
 pub const WorldChat = struct {
-    chat: types.ChatType,
+    channel: types.ChatChannel,
     null: u8 = 0,
     char_id: u32 = 0,
-    from: UTF16String,
-    message: UTF16String,
+    from: UTF16String(16),
+    message: UTF16String(128),
     unk1: u32 = 0,
     unk2: u8 = 0,
 };
@@ -358,10 +358,10 @@ pub const WorldChat = struct {
 /// With other `char_id`s, message is just not visible
 /// TODO: test it more
 pub const PublicChat = struct {
-    chat: types.ChatType,
+    channel: types.ChatChannel,
     null: u8 = 0,
     char_id: u32 = 0,
-    message: UTF16String,
+    message: UTF16String(128),
     unk1: u32 = 0,
     unk2: u8 = 0,
 };
