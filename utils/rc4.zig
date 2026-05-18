@@ -41,7 +41,6 @@ pub const Rc4Writer = struct {
     }
 
     fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
-        errdefer print("error: rc4 drain buffered\n", .{});
         const self: *@This() = @alignCast(@fieldParentPtr("writer", w));
         _ = splat;
 
@@ -53,7 +52,6 @@ pub const Rc4Writer = struct {
         // print("Encrypted:  {X}\n", .{buffered});
         _ = w.consumeAll();
 
-        errdefer print("error: rc4 drain data\n", .{});
         var buf: [128]u8 = undefined;
         const slice = data[0];
         @memcpy(buf[0..slice.len], slice);

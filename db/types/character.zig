@@ -1,66 +1,18 @@
 const std = @import("std");
 
-const Vec3 = @import("../protocol/types.zig").Vec3;
-const FixedArray = @import("../protocol/utils.zig").FixedArray;
-const String = @import("../protocol/utils.zig").String;
+const Vec3 = @import("../../protocol/types.zig").Vec3;
+const BoundedArray = @import("../../utils/utils.zig").BoundedArray;
+const String = @import("../../utils/utils.zig").String;
+
+pub const CharacterId = u32;
+pub const SkillId = u32;
 
 const DateTime = u32;
 
-pub const MAX_EQUIPMENT_ITEMS = 22;
-pub const MAX_SKILLS = 32;
-
-pub const InventoryItem = struct {
-    slot: u32,
-    id: u32,
-    expire_date: u32,
-    proc_type: u32,
-    count: u32,
-    guid_or_unk: u16,
-    data: FixedArray(u8, 256),
-};
-
-pub const EquipmentSlot = enum(u32) {
-    // zig fmt: off
-    weapon        = 0,
-    head          = 1,
-    neck          = 2,
-    cape          = 3,
-    shirt         = 4,
-    belt          = 5,
-    legs          = 6,
-    feet          = 7,
-    wrists        = 8,
-    ring_left     = 9,
-    ring_right    = 10,
-    projectile    = 11,
-    flyer         = 12,
-    fashion_top   = 13,
-    fashion_legs  = 14,
-    fashion_feet  = 15,
-    fashion_arms  = 16,
-    utility_charm = 17,
-    tome          = 18,
-    emoji_set     = 19,
-    hp_charm      = 20,
-    mp_charm      = 21,
-    // zig fmt: on
-};
-
-pub const EquipmentItem = struct {
-    id: u32,
-    slot: EquipmentSlot,
-    count: u32,
-    max_count: u32,
-    data: FixedArray(u8, 256),
-    proc_type: u32,
-    expire_date: u32,
-    guid1: u32,
-    guid2: u32,
-    mask: u32,
-};
-
 pub const Skill = struct {
-    id: u16,
+    id: SkillId = undefined,
+    skill_id: u16,
+    char_id: CharacterId,
     level: u16,
     null: u8 = 0,
 };
@@ -105,16 +57,18 @@ pub const CharacterFlags = packed struct(u32) {
 };
 
 pub const Character = struct {
+    id: CharacterId = undefined,
+    account_id: u32,
+
     // Base
-    char_id: u8,
     gender: u8 = 0,
     race: u8 = 1,
     class: u8 = 1,
     level: u16 = 0,
     cultivation: u16 = 0,
-    name: String,
-    custom_data: FixedArray(u8, 256),
-    equipment: FixedArray(EquipmentItem, MAX_EQUIPMENT_ITEMS),
+    name: String(16),
+    custom_data: BoundedArray(u8, 256),
+    // equipment: BoundedArray(u32, MAX_EQUIPMENT_ITEMS),
     is_active: bool = true,
     delete_time: DateTime = 0,
     create_time: DateTime = 0,
@@ -182,15 +136,18 @@ pub const Character = struct {
     angle: u8 = 0,
 
     // Etc
-    skills: FixedArray(Skill, MAX_SKILLS),
+    // skills: BoundedArray(Skill, MAX_SKILLS),
 
-    ui_config: FixedArray(u8, 512),
+    ui_config: BoundedArray(u8, 512),
+
+    pub const MAX_SKILLS = 32;
 };
 
 pub fn getExampleChar() !Character {
     var ui_config_buf: [512]u8 = undefined;
     return .{
-        .char_id = 123,
+        .account_id = 1,
+
         .race = 1,
         .class = 6,
         .level = 86,
@@ -202,7 +159,7 @@ pub fn getExampleChar() !Character {
         .mp_max = 7000,
         .experience = 100_000,
         .spirit = 100_500_000,
-        .chi = 50,
+        .chi = 299,
         .chi_max = 299,
 
         .custom_data = try .fromSlice(&.{
@@ -219,42 +176,12 @@ pub fn getExampleChar() !Character {
             18,255,0,0,0,0,242,244,248,255,123,110,110,110,117,128,0,0
             // zig fmt: on
         }),
-        .equipment = try .fromSlice(&.{
-            .{
-                .item_id = 14903,
-                .slot = EquipmentSlot.weapon,
-                .count = 1,
-                .max_count = 1,
-                .data = try .fromSlice(&.{
-                    // zig fmt: off
-                    80,0,255,0,44,0,0,0,0,0,240,0,122,18,0,0,4,41,0,0,44,0,
-                    4,16,87,0,97,0,110,0,100,0,101,0,114,0,101,0,114,0,0,0,
-                    0,0,36,1,0,0,10,0,0,0,0,0,0,0,114,1,0,0,43,2,0,0,161,2,
-                    0,0,172,3,0,0,16,0,0,0,0,0,64,64,0,0,0,0,2,0,18,0,232,
-                    24,0,0,232,24,0,0,6,0,0,0,185,33,0,0,3,0,0,0,221,35,0,
-                    0,118,0,0,0,218,36,0,0,165,0,0,0,134,164,0,0,32,0,0,0,
-                    134,164,0,0,32,0,0,0,225,70,0,0,103,0,0,0,5,0,0,0,
-                    // zig fmt: on
-                }),
-                .proc_type = 0,
-                .expire_date = 0,
-                .guid1 = 1_751_064_266,
-                .guid2 = 16_784_156,
-                .mask = 1_073_741_825,
-            },
-        }),
         .create_time = 1_753_704_763,
         .lastlogin_time = 1_753_704_763,
         // .position = .{ .x = 111, .y = 40, .z = 40 }, // GM zone
         .position = .{ .x = 330, .y = 440, .z = 40 }, // 19
 
         .angle = 120,
-
-        .skills = try .fromSlice(&.{
-            Skill{ .id = 167, .level = 1 },
-            Skill{ .id = 234, .level = 1 },
-            Skill{ .id = 235, .level = 1 },
-        }),
 
         .ui_config = try .fromSlice(try std.fmt.hexToBytes(&ui_config_buf, "c2eb0b227801dbc3ccc0c0cec0c0f01f0b000a3330413188cd082280e0351083c441e01510038d00f3f9410240c002c43079109f15cae703718000641f082c076290b52036cc6c109bdf02e11e107f148c86c06808600f011360c6e100661f18c0ae6a988a9e81941dc4f80e54bec0ca18107d0d4840cb2b68d081c290c10848b03032448b1994382832093030fcf8efa808d20a62333078826967ab1886a2fcf4a2c45c05b7cc9cd462058d0a0b06cd9830471fffa098d49cd4dcd4bc921886e2d42297c492c4189fc4cafcd2921853060b5373bdccbc4c06d13f7fa2c5166cae615800a443d4575583cc0599ceb0b946f40d9fadc49abfd1620e25968ae03214ec3a700483ddcf08212114d0c9405d4002a21d9d03f2104406e277089b5a8e03068807d09189c7cb181a7ecc65e885d2207f1840d93f7a64445f083828820a7c105be0e96c05a06f151c19181aec99806e83b90ea4895a000078ab7ae4")),
     };

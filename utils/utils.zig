@@ -1,5 +1,8 @@
+pub const mppc = @import("mppc.zig");
+pub const rc4 = @import("rc4.zig");
+
 const std = @import("std");
-const codec = @import("codec.zig");
+const codec = @import("../protocol/codec.zig");
 
 const readCuint = codec.readCuint;
 const writeCuint = codec.writeCuint;
@@ -16,9 +19,9 @@ pub fn EndianTable(comptime T: type, default: std.builtin.Endian) type {
 
     comptime var len = 0;
     inline for (info.@"struct".fields) |f| {
-        switch (@typeInfo(f.type)) {
-            .int => len = len + 1,
-            else => {},
+        const field_info = @typeInfo(f.type);
+        if (comptime field_info == .int or field_info == .@"enum") {
+            len = len + 1;
         }
     }
 
@@ -28,18 +31,16 @@ pub fn EndianTable(comptime T: type, default: std.builtin.Endian) type {
 
     comptime var i = 0;
     inline for (info.@"struct".fields) |f| {
-        switch (@typeInfo(f.type)) {
-            .int => {
-                field_names[i] = f.name;
-                field_types[i] = std.builtin.Endian;
-                field_attrs[i] = .{
-                    .@"comptime" = false,
-                    .@"align" = f.alignment,
-                    .default_value_ptr = &default,
-                };
-                i = i + 1;
-            },
-            else => {},
+        const field_info = @typeInfo(f.type);
+        if (comptime field_info == .int or field_info == .@"enum") {
+            field_names[i] = f.name;
+            field_types[i] = std.builtin.Endian;
+            field_attrs[i] = .{
+                .@"comptime" = false,
+                .@"align" = f.alignment,
+                .default_value_ptr = &default,
+            };
+            i = i + 1;
         }
     }
 
@@ -114,12 +115,22 @@ pub fn copyDeep(comptime F: type, comptime T: type, from: F, diff: FieldsTypeDif
     return result;
 }
 
-pub fn FixedArray(comptime T: type, comptime cap: usize) type {
+pub fn BoundedArray(comptime T: type, comptime cap: usize) type {
+    return BoundedArrayImpl(T, cap, false);
+}
+
+pub fn String(comptime cap: usize) type {
+    return BoundedArrayImpl(u8, cap, true);
+}
+
+fn BoundedArrayImpl(comptime T: type, comptime cap: usize, comptime unicode: bool) type {
     return struct {
         items: [cap]T = undefined,
         len: usize = 0,
 
         const Self = @This();
+        pub const capacity = cap;
+        pub const is_unicode = unicode;
 
         pub fn fromSlice(s: []const T) !Self {
             if (s.len > cap) return error.Overflow;
@@ -162,7 +173,12 @@ pub fn FixedArray(comptime T: type, comptime cap: usize) type {
                 return result;
             }
         }
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            try writer.print("{s}", .{self.slice()});
+        }
     };
 }
-
-pub const String = FixedArray(u8, 256);

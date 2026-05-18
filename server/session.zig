@@ -3,24 +3,30 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 const Io = std.Io;
 
+const utils = @import("../utils/utils.zig");
 const events = @import("../events/events.zig");
-const Rc4Writer = @import("utils/rc4.zig").Rc4Writer;
-const Rc4Reader = @import("utils/rc4.zig").Rc4Reader;
-const MppcWriter = @import("utils/mppc.zig").MppcWriter;
+const DB = @import("../db/db.zig").DB;
+const AccountId = @import("../db/types/account.zig").AccountId;
+const CharacterId = @import("../db/types/character.zig").CharacterId;
 const InPacket = @import("../protocol/packets.zig").InPacket;
 const OutPacket = @import("../protocol/packets.zig").OutPacket;
 const Container = @import("../protocol/packets.zig").Container;
-const Account = @import("../world/world.zig").Account;
 const Owned = @import("../protocol/packets.zig").Owned;
 const sendChallenge = @import("handlers/auth.zig").sendChallenge;
 const handleAuth = @import("handlers/auth.zig").handleAuth;
 const handleCharList = @import("handlers/char_list.zig").handleCharList;
 const handleInWorld = @import("handlers/in_world.zig").handleInWorld;
 
+const Rc4Writer = utils.rc4.Rc4Writer;
+const Rc4Reader = utils.rc4.Rc4Reader;
+const MppcWriter = utils.mppc.MppcWriter;
+
 const Channel = events.Channel;
 const Message = events.Message;
 const Action = events.Action;
 const Update = events.Update;
+
+const SessionId = u32;
 
 const Stage = union(enum) {
     auth,
@@ -35,17 +41,21 @@ const AuthState = struct {
 };
 
 pub const Session = struct {
-    id: ?u32 = null,
-    char_id: ?u32 = null,
     io: Io,
     gpa: std.mem.Allocator,
     arena: std.mem.Allocator, // Lives the whole session
-    scratch: std.mem.Allocator, // Reset after processing every request
+
+    id: ?SessionId = null,
+    account_id: ?AccountId = null,
+    char_id: ?CharacterId = null,
+
+    // DB is meant to be only used during .auth and .char_list phases
+    // to fetch account and characters directly.
+    db: *DB,
     socket: Io.net.Socket,
     reader: *Io.Reader,
     writer: *Io.Writer,
     stage: Stage,
-    account: ?Account = null,
     auth: AuthState = .{},
     encryptor: ?*Io.Writer = null,
     decryptor: ?*Io.Reader = null,
@@ -63,11 +73,11 @@ pub const Session = struct {
         if (updates.len > 0) {
             errdefer print("error: sending pending updates\n", .{});
             const packet: OutPacket = .{ .container = .{ .list = try .fromSlice(updates) } };
-            try packet.write(writer, self.scratch);
+            try packet.write(writer, self.gpa);
         }
         for (self.outbox.items) |packet| {
             errdefer print("error: sending pending packets\n", .{});
-            try packet.write(writer, self.scratch);
+            try packet.write(writer, self.gpa);
         }
         try writer.flush();
         self.outbox.clearRetainingCapacity();
@@ -75,7 +85,7 @@ pub const Session = struct {
 
     pub fn sendPacket(self: Session, packet: OutPacket) !void {
         const writer = self.compressor orelse self.writer;
-        try packet.write(writer, self.scratch);
+        try packet.write(writer, self.gpa);
         try self.writer.flush();
     }
 
@@ -125,9 +135,10 @@ pub fn start(
     stream: *Io.net.Stream,
     messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
+    db: *DB,
 ) void {
     print("INFO: [Session] Client {f} connected\n", .{stream.socket.address});
-    startSession(io, gpa, stream, messages_tx, actions_tx) catch |err| {
+    startSession(io, gpa, stream, messages_tx, actions_tx, db) catch |err| {
         print("ERROR: [Session] Client {f} disconnected with error: {}\n", .{ stream.socket.address, err });
         stream.shutdown(io, .both) catch {};
         stream.close(io);
@@ -140,28 +151,25 @@ fn startSession(
     stream: *Io.net.Stream,
     messages_tx: *Channel(Message),
     actions_tx: *Channel(Action),
+    db: *DB,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
-    var scratch = std.heap.ArenaAllocator.init(gpa);
-    errdefer scratch.deinit();
     var reader_buf: [4096]u8 = undefined;
     var writer_buf: [4096]u8 = undefined;
     var stream_reader = stream.reader(io, &reader_buf);
     var stream_writer = stream.writer(io, &writer_buf);
-    const inbox_back = try arena.allocator().alloc(Owned(InPacket), 64);
-    const inbox_front = try arena.allocator().alloc(Owned(InPacket), 64);
-    var inbox: Channel(Owned(InPacket)) = .init(io, inbox_back, inbox_front);
+    var inbox: Channel(Owned(InPacket)) = try .init(io, arena.allocator(), 64);
     const outbox_buf = try arena.allocator().alloc(OutPacket, 64);
     var outbox: std.ArrayList(OutPacket) = .initBuffer(outbox_buf);
-    const upd_back = try arena.allocator().alloc(Update, 64);
-    const upd_front = try arena.allocator().alloc(Update, 64);
-    var updates_rx: Channel(Update) = .init(io, upd_back, upd_front);
+    var updates_rx: Channel(Update) = try .init(io, arena.allocator(), 128);
+
     var session: Session = .{
         .io = io,
         .gpa = gpa,
         .arena = arena.allocator(),
-        .scratch = scratch.allocator(),
+
+        .db = db,
         .stage = .auth,
         .socket = stream.socket,
         .reader = &stream_reader.interface,
@@ -178,7 +186,6 @@ fn startSession(
 
     // Syncronous loop, before entering world
     while (true) {
-        defer _ = scratch.reset(.retain_capacity);
         var packet_arena = std.heap.ArenaAllocator.init(gpa);
         errdefer arena.deinit();
         const reader = session.decryptor orelse session.reader;
@@ -212,7 +219,6 @@ fn startSession(
 
     // Async loop
     while (true) {
-        defer _ = scratch.reset(.retain_capacity);
         errdefer print("error: async loop\n", .{});
         try session.sendPendingPackets();
         for (try session.inbox.drain()) |packet| {

@@ -4,20 +4,29 @@ const ArrayList = std.ArrayList;
 
 pub fn Channel(comptime T: type) type {
     return struct {
+        io: Io,
+        gpa: std.mem.Allocator,
         mutex: Io.Mutex,
         front: ArrayList(T),
         back: ArrayList(T),
-        io: Io,
 
         const Self = @This();
 
-        pub fn init(io: std.Io, back: []T, front: []T) Self {
+        pub fn init(io: std.Io, gpa: std.mem.Allocator, buf_len: usize) !Self {
+            const back = try gpa.alloc(T, buf_len);
+            const front = try gpa.alloc(T, buf_len);
             return .{
+                .io = io,
+                .gpa = gpa,
+                .mutex = .init,
                 .back = .initBuffer(back),
                 .front = .initBuffer(front),
-                .mutex = .init,
-                .io = io,
             };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.gpa.free(self.back);
+            self.gpa.free(self.front);
         }
 
         pub fn append(self: *Self, item: T) !void {

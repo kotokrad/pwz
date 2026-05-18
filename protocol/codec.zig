@@ -3,12 +3,10 @@ const print = std.debug.print;
 const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
 
-const utils = @import("utils.zig");
-const overrides = @import("overrides.zig");
+const utils = @import("../utils/utils.zig");
 
-const FixedArray = utils.FixedArray;
+const BoundedArray = utils.BoundedArray;
 const String = utils.String;
-
 const shortTypeName = utils.shortTypeName;
 const getEndianFor = utils.getEndianFor;
 
@@ -76,7 +74,7 @@ fn VecGeneric(
     comptime cap: usize,
 ) type {
     return struct {
-        list: FixedArray(T, cap),
+        list: BoundedArray(T, cap),
 
         const S = @Int(.unsigned, @intFromEnum(len_prefix_size));
         const Self = @This();
@@ -121,7 +119,7 @@ pub fn VecU32LE(comptime T: type, comptime cap: usize) type {
 /// Encodes items one-by-one without any size prefix
 pub fn Seq(comptime T: type, comptime cap: usize) type {
     return struct {
-        list: FixedArray(T, cap),
+        list: BoundedArray(T, cap),
 
         const Self = @This();
         pub fn write(self: Self, writer: *Writer) !void {

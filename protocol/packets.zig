@@ -3,7 +3,7 @@ const print = std.debug.print;
 const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
 
-const utils = @import("utils.zig");
+const utils = @import("../utils/utils.zig");
 const codec = @import("codec.zig");
 const types = @import("types.zig");
 const events = @import("../events/events.zig");
@@ -11,7 +11,7 @@ const events = @import("../events/events.zig");
 const Octets = codec.Octets;
 const Seq = codec.Seq;
 const UTF16String = codec.UTF16String;
-const FixedArray = utils.FixedArray;
+const BoundedArray = utils.BoundedArray;
 const String = utils.String;
 const EndianTable = utils.EndianTable;
 const Update = events.Update;

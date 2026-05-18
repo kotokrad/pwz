@@ -3,11 +3,12 @@ const print = std.debug.print;
 const Writer = std.Io.Writer;
 
 const codec = @import("../protocol/codec.zig");
-const utils = @import("../protocol/utils.zig");
+const utils = @import("../utils/utils.zig");
 const Vec3 = @import("../protocol/types.zig").Vec3;
-const character = @import("../world/character.zig");
+const character = @import("../db/types/character.zig");
+const inventory = @import("../db/types/inventory.zig");
 
-const FixedArray = utils.FixedArray;
+const BoundedArray = utils.BoundedArray;
 const EndianTable = utils.EndianTable;
 const copyShallow = utils.copyShallow;
 const OctetsU32LE = codec.OctetsU32LE;

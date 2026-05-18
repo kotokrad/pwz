@@ -5,8 +5,9 @@ const Reader = std.Io.Reader;
 
 const channel = @import("channel.zig");
 const codec = @import("../protocol/codec.zig");
-const shortTypeName = @import("../protocol/utils.zig").shortTypeName;
+const shortTypeName = @import("../utils/utils.zig").shortTypeName;
 const Vec3 = @import("../protocol/types.zig").Vec3;
+const SessionId = @import("../world/world.zig").SessionId;
 
 const Channel = channel.Channel;
 
@@ -18,7 +19,7 @@ const Channel = channel.Channel;
 /// (but for now server responds immediately)
 ///
 /// We have to send it together with the session id
-pub const Action = struct { u8, ActionPayload };
+pub const Action = struct { SessionId, ActionPayload };
 
 pub const ActionPayload = union(enum(u16)) {
     // zig fmt: off

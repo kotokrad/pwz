@@ -2,16 +2,19 @@
 
 const std = @import("std");
 
-const utils = @import("utils.zig");
+const utils = @import("../utils/utils.zig");
 const codec = @import("codec.zig");
-const character = @import("../world/character.zig");
+const character = @import("../db/types/character.zig");
+const inventory = @import("../db/types/inventory.zig");
 
-const FixedArray = utils.FixedArray;
+const UTF16String = codec.UTF16String;
+const BoundedArray = utils.BoundedArray;
 const String = utils.String;
 const EndianTable = utils.EndianTable;
-const UTF16String = codec.UTF16String;
 const copyShallow = utils.copyShallow;
 const copyDeep = utils.copyDeep;
+
+const Item = inventory.Item;
 
 pub const Vec3 = struct {
     x: f32,

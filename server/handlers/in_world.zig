@@ -1,11 +1,11 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const Session = @import("../session.zig").Session;
-const FixedArray = @import("../../protocol/utils.zig").FixedArray;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const events = @import("../../events/events.zig");
+const BoundedArray = @import("../../utils/utils.zig").BoundedArray;
+const Session = @import("../session.zig").Session;
 
 const Reply = events.Reply;
 const Action = events.Action;
@@ -57,7 +57,7 @@ fn handleEnterWorld(session: *Session, payload: EnterWorld) !void {
 }
 
 fn handleGetUIConfig(session: *Session, payload: GetUIConfig) !void {
-    var reply: Reply(FixedArray(u8, 512)) = .{};
+    var reply: Reply(BoundedArray(u8, 512)) = .{};
     try session.messages_tx.append(.{ .get_ui_config = .{
         .session_id = @truncate(session.id.?),
         .char_id = @truncate(payload.char_id),
@@ -122,7 +122,7 @@ fn handlePublicMessage(session: *Session, payload: PublicMessage) !void {
     print("INFO: New chat message: {s}\n", .{payload.message.string.slice()});
 
     // const message = WorldChat{
-    //     .chat = payload.chat,
+    //     .channel = payload.channel,
     //     .char_id = 123,
     //     .from = try .init("Yo"),
     //     .message = try .init("Hey"),

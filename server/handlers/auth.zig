@@ -3,12 +3,13 @@ const print = std.debug.print;
 const Md5 = std.crypto.hash.Md5;
 const HmacMd5 = std.crypto.auth.hmac.HmacMd5;
 
-const Session = @import("../session.zig").Session;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
+const Session = @import("../session.zig").Session;
+const SessionId = @import("../../world/world.zig").SessionId;
 const Reply = @import("../../events/events.zig").Reply;
-const Account = @import("../../world/world.zig").Account;
+
 const InPacket = packets.InPacket;
 const ServerError = packets.ServerError;
 const ErrorCode = types.ErrorCode;
@@ -65,37 +66,21 @@ pub fn sendChallenge(session: *Session) !void {
 }
 
 fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
-    session.auth.hash = payload.hash.value;
-    session.auth.username = try session.arena.dupe(u8, payload.username.slice());
+    const hash = payload.hash.value;
+    const username = payload.username.slice();
+    session.auth.hash = hash;
+    session.auth.username = try session.arena.dupe(u8, username);
 
-    var reply: Reply(?Account) = .{};
-    try session.messages_tx.append(.{
-        .auth = .{
-            // Just sending the pointer because we're waiting for reply
-            .username = session.auth.username.?,
-            .reply = &reply,
-        },
-    });
+    const account = try session.db.getAccountByUsername(username);
 
-    const account = try reply.await(session.io);
+    print("INFO: [Auth] login request {s}:{X}\n", .{ username, hash });
 
-    print("INFO: [Auth] login request {s}:{X}\n", .{ payload.username.slice(), payload.hash.value });
-    // print("debug: [Auth] client hash {X}\n", .{payload.hash.value});
-    // if (account) |a| print("debug: [Auth] hash for {s}: {X}\n", .{ payload.username, a.hash });
-
-    if (account == null or !std.mem.eql(u8, &payload.hash.value, &account.?.hash)) {
-        const server_error = ServerError{
-            .code = ErrorCode.invalid_credentials,
-            .message = try .fromSlice("Yoyoyo"),
-        };
-        try session.enqueuePacket(.{ .server_error = server_error });
-        return;
+    if (account == null or !std.mem.eql(u8, &hash, &account.?.hash)) {
+        return try sendServerError(session, .invalid_credentials, "Not found");
     }
 
     const sm_key: [16]u8 = @splat(69);
-    // session.account_id = 0xEFBE3713;
-    // session.session_id = 0xEFBEADDE;
-    session.account = account;
+    session.account_id = account.?.id;
 
     try session.enableDecryption(payload.username.slice(), payload.hash.value, sm_key);
 
@@ -103,11 +88,19 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     try session.enqueuePacket(.{ .key_exchange = key_exchange });
 }
 
+fn sendServerError(session: *Session, code: ErrorCode, message: []const u8) !void {
+    const server_error = ServerError{
+        .code = code,
+        .message = try .fromSlice(message),
+    };
+    try session.enqueuePacket(.{ .server_error = server_error });
+}
+
 fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
     try session.enableEncryption(session.auth.username.?, session.auth.hash.?, payload.key.value);
     try session.enableCompression();
 
-    var reply: Reply(u8) = .{};
+    var reply: Reply(SessionId) = .{};
     try session.messages_tx.append(.{
         .init_session = .{
             .channel = session.updates_rx,
@@ -118,7 +111,7 @@ fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
     session.id = session_id;
 
     const online_announce = OnlineAnnounce{
-        .account_id = session.account.?.id,
+        .account_id = session.account_id.?,
         .session_id = session_id,
         .time_remaining = 0,
         .zone_id = 1,

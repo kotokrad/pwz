@@ -64,9 +64,9 @@ pub const Mppc = struct {
     pub fn compress(self: *Mppc, data: []u8) !void {
         var bs: BitStream = .init(self.out);
         // Slide the history buffer if needed
-        // Check if there are packets >= 2K bytes
-        assert(data.len <= 2048);
-        if (self.cur >= HISTORY_SIZE) {
+        // Check if there are packets >= 4K bytes
+        assert(data.len <= 4096);
+        if (self.cur + data.len >= HISTORY_SIZE) {
             std.mem.copyForwards(u8, self.hist[0..HISTORY_KEEP], self.hist[self.cur - HISTORY_KEEP .. self.cur]);
             self.cur = HISTORY_KEEP;
         }
