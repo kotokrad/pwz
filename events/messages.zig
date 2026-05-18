@@ -38,5 +38,6 @@ pub const Message = union(enum) {
     init_session:  struct { channel: *Channel(Update), reply: *Reply(SessionId) },
     enter_world:   struct { session_id: SessionId, char_id: CharacterId },
     get_ui_config: struct { session_id: SessionId, char_id: CharacterId, reply: *Reply(BoundedArray(u8, 512)) },
+    set_char_flag: struct { session_id: SessionId, char_id: CharacterId, flag: u5 },
     // zig fmt: on
 };

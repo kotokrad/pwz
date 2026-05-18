@@ -112,6 +112,10 @@ pub const RoleWorldInfo = struct {
             .sec_level = 0,
         });
     }
+
+    pub fn setFlag(self: *RoleWorldInfo, flag: u5) void {
+        self.flags = @bitCast((@as(u32, 1) << flag));
+    }
 };
 
 const NearbyPlayer = struct {

@@ -128,9 +128,19 @@ fn handlePublicMessage(session: *Session, payload: PublicMessage) !void {
     //     .message = try .init("Hey"),
     // };
 
-    const announce_1 = PublicChat{ .chat = .trade, .message = try .init("Commands:") };
-    const announce_2 = PublicChat{ .chat = .trade, .message = try .init("    $ help        - show this message") };
-    const announce_3 = PublicChat{ .chat = .trade, .message = try .init("    $ rm -fr /    - remove french language pack") };
+    if (payload.channel == .trade) {
+        try runTerminal(session, payload.message.string.slice());
+        return;
+    }
+
+    if (payload.channel == .group) {
+        try runCommand(session, payload.message.string.slice());
+        return;
+    }
+
+    const announce_1 = PublicChat{ .channel = .trade, .message = try .init("Commands:") };
+    const announce_2 = PublicChat{ .channel = .trade, .message = try .init("    $ help        - show this message") };
+    const announce_3 = PublicChat{ .channel = .trade, .message = try .init("    $ rm -fr /    - remove french language pack") };
 
     try session.enqueuePackets(&.{
         .{ .public_chat = announce_1 },
@@ -151,3 +161,83 @@ fn handlePrivateMessage(session: *Session, payload: PrivateMessage) !void {
 fn handleGamedata(session: *Session, payload: ActionPayload) !void {
     try session.actions_tx.append(.{ @truncate(session.id.?), payload });
 }
+
+fn runTerminal(session: *Session, command: []const u8) !void {
+    print("Command: {s}\n", .{command});
+    if (!std.unicode.utf8ValidateSlice(command)) {
+        try session.enqueuePacket(.{ .public_chat = .{ .channel = .world, .message = try .init("Invalid utf-8") } });
+        return;
+    }
+
+    var parts = std.mem.tokenizeScalar(u8, command, ' ');
+    if (parts.peek() == null) unreachable;
+
+    const n_parts = std.mem.count(u8, command, " ") + 1;
+    var argv = try session.gpa.alloc([]const u8, n_parts);
+    defer session.gpa.free(argv);
+
+    var buf: [128]u8 = undefined;
+    // A hack to make `ls` etc work. Otherwise have to pass $PATH here from main()
+    argv[0] = try std.fmt.bufPrint(&buf, "/run/current-system/sw/bin/{s}", .{parts.next().?});
+
+    var i: u8 = 1;
+    while (parts.next()) |arg| {
+        argv[i] = arg;
+        i += 1;
+    }
+
+    var child = std.process.spawn(session.io, .{
+        .argv = argv,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    }) catch |err| {
+        print("Child process error: {any}\n", .{err});
+        return;
+    };
+
+    var fr = child.stdout.?.reader(session.io, &.{});
+    var out: [1024]u8 = undefined;
+    const n_read = try fr.interface.readSliceShort(&out);
+    _ = try child.wait(session.io);
+
+    var lines = std.mem.splitScalar(u8, out[0..n_read], '\n');
+    while (lines.next()) |line| {
+        print("stdout: {s}\n", .{line});
+        try session.enqueuePacket(.{ .public_chat = .{ .channel = .world, .message = try .init(line) } });
+    }
+
+    return;
+}
+
+fn runCommand(session: *Session, line: []const u8) !void {
+    print("Command: {s}\n", .{line});
+    const command = Command.parse(line);
+    if (command == null) return;
+    switch (command.?) {
+        .set_flag => |flag| {
+            try session.messages_tx.append(.{
+                .set_char_flag = .{
+                    .session_id = @truncate(session.id.?),
+                    .char_id = @truncate(session.char_id.?),
+                    .flag = flag,
+                },
+            });
+        },
+    }
+}
+
+const Command = union(enum) {
+    set_flag: u5,
+
+    fn parse(line: []const u8) ?Command {
+        var parts = std.mem.tokenizeScalar(u8, line, ' ');
+        if (parts.next()) |command| {
+            if (std.mem.eql(u8, command, "set")) {
+                const flag = std.fmt.parseInt(u5, parts.next() orelse "", 10) catch return null;
+                if (flag > 31) return null;
+                return .{ .set_flag = flag };
+            }
+        }
+        return null;
+    }
+};

@@ -101,6 +101,18 @@ pub fn loop(
 
                     payload.reply.set(io, char.ui_config);
                 },
+                .set_char_flag => |payload| {
+                    const ctx = get_message_context(&world, db, payload) catch continue;
+                    const updates_tx, const char = ctx;
+
+                    var updated_info: upd.RoleWorldInfo = .from(char.*);
+                    updated_info.setFlag(payload.flag);
+                    print("----------------------------------\n", .{});
+                    print("{any}\n", .{updated_info.flags});
+                    print("{b}\n", .{@as(u32, @bitCast(updated_info.flags)) & 0xFFFF});
+                    print("----------------------------------\n", .{});
+                    try updates_tx.append(.{ .role_world_info = updated_info });
+                },
             }
         }
 
