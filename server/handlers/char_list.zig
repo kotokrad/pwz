@@ -32,7 +32,6 @@ fn handleRoleList(session: *Session, payload: RoleList) !void {
     var role_info_list: BoundedArray(RoleInfo, 8) = .{};
     for (characters.slice()) |char| {
         const items = try session.db.getItemsByCharId(char.id);
-        print("ITEMS: {any}\n", .{items.slice()});
         const role_info = try RoleInfo.from(char, items.slice());
         try role_info_list.append(role_info);
     }

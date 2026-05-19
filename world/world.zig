@@ -1,14 +1,18 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const BoundedArray = @import("../utils/utils.zig").BoundedArray;
 const EntityMap = @import("../db/entity.zig").EntityMap;
 const DB = @import("../db/db.zig").DB;
+const utils = @import("../utils/utils.zig");
 const character = @import("../db/types/character.zig");
 const types = @import("../protocol/types.zig");
 const events = @import("../events/events.zig");
 const upd = @import("../events/updates.zig");
 
+const c = utils.term.c;
+const r = utils.term.r;
+const BoundedArray = utils.BoundedArray;
+const Vec3 = types.Vec3;
 const Channel = events.Channel;
 const Message = events.Message;
 const Action = events.Action;
@@ -75,7 +79,7 @@ pub fn loop(
             switch (message) {
                 .init_session => |payload| {
                     const session_id = try world.registerSession(payload.channel);
-                    print("Creatied a session {}\n", .{session_id});
+                    print("INFO: [World] Created a session {}\n", .{session_id});
                     payload.reply.set(io, session_id);
                 },
                 .enter_world => |payload| {

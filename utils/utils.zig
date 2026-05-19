@@ -1,5 +1,6 @@
 pub const mppc = @import("mppc.zig");
 pub const rc4 = @import("rc4.zig");
+pub const term = @import("terminal.zig");
 
 const std = @import("std");
 const codec = @import("../protocol/codec.zig");

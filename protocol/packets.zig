@@ -8,6 +8,8 @@ const codec = @import("codec.zig");
 const types = @import("types.zig");
 const events = @import("../events/events.zig");
 
+const c = utils.term.c;
+const r = utils.term.r;
 const Octets = codec.Octets;
 const Seq = codec.Seq;
 const UTF16String = codec.UTF16String;
@@ -70,14 +72,14 @@ pub const InPacket = union(enum(u16)) {
                     // const hex = reader.buffered();
                     const payload = try codec.deserialize(T, reader, arena);
 
-                    print("0x{X:0>4}: <- {s}\n", .{ opcode, utils.shortTypeName(T) });
+                    print("{s}<- 0x{X:0>4}: {s}{s}\n", .{ c(2), opcode, utils.shortTypeName(T), r() });
                     // print("    hex: {X}\n", .{hex});
                     // print("    {any}\n", .{payload});
                     return @unionInit(InPacket, field.name, payload);
                 }
             }
 
-            print("0x{X:0>4}: <- UNKNOWN OPCODE ({X})\n", .{ opcode, reader.buffered() });
+            print("{s}<- 0x{X:0>4}:{s} UNKNOWN OPCODE ({X})\n", .{ c(2), opcode, r(), reader.buffered() });
 
             reader.toss(payload_len);
             return error.UnknownOpcode;
@@ -120,8 +122,8 @@ pub const OutPacket = union(enum(u16)) {
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
 
-                if (T != Update) {
-                    print("0x{X:0>4}: -> {s}\n", .{ opcode, utils.shortTypeName(T) });
+                if (T != Container) {
+                    print("{s}-> 0x{X:0>4}: {s}{s}\n", .{ c(3), opcode, utils.shortTypeName(T), r() });
                     // print("{any}\n", .{variant});
                 }
             },

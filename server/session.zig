@@ -181,7 +181,7 @@ fn startSession(
         .updates_rx = &updates_rx,
     };
 
-    print("Sending challenge...\n", .{});
+    print("INFO: [Session] Sending challenge...\n", .{});
     try sendChallenge(&session);
 
     // Syncronous loop, before entering world
@@ -207,9 +207,7 @@ fn startSession(
         try session.sendPendingPackets();
 
         if (session.stage == .in_world) {
-            print("\n", .{});
             print("INFO: [Session Sync] Switching to async loop\n", .{});
-            print("\n", .{});
             break;
         }
     }

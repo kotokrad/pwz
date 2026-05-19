@@ -5,10 +5,13 @@ const Reader = std.Io.Reader;
 
 const channel = @import("channel.zig");
 const codec = @import("../protocol/codec.zig");
-const shortTypeName = @import("../utils/utils.zig").shortTypeName;
+const utils = @import("../utils/utils.zig");
 const Vec3 = @import("../protocol/types.zig").Vec3;
 const SessionId = @import("../world/world.zig").SessionId;
 
+const c = utils.term.c;
+const r = utils.term.r;
+const shortTypeName = utils.shortTypeName;
 const Channel = channel.Channel;
 
 /// `Actions` are mapped to `subpackets` that server receives in a `Gamedata` packet.
@@ -50,11 +53,11 @@ pub const ActionPayload = union(enum(u16)) {
         inline for (@typeInfo(std.meta.Tag(ActionPayload)).@"enum".fields) |field| {
             if (field.value == opcode) {
                 const T = @FieldType(ActionPayload, field.name);
-                const hex = reader.buffered();
+                // const hex = reader.buffered();
                 const payload = try codec.deserialize(T, reader, arena);
-                print("    0x{x:0>2}: <- {s}\n", .{ opcode, shortTypeName(T) });
-                print("      hex: {X}\n", .{hex});
-                print("      {any}\n", .{payload});
+                print("{s}<- 0x{x:0>2}: {s}{s}\n", .{ c(4), opcode, shortTypeName(T), r() });
+                // print("      hex: {X}\n", .{hex});
+                // print("      {any}\n", .{payload});
                 if (reader.bufferedLen() > 0) {
                     print("WARNING: [Actions] {any} has some leftover data: {X}\n", .{ T, reader.buffered() });
                 }
@@ -62,7 +65,7 @@ pub const ActionPayload = union(enum(u16)) {
             }
         }
 
-        print("  0x{X:0>2}: <- UNKNOWN ACTION ({X})\n", .{ opcode, reader.buffered() });
+        print("{s}<- 0x{X:0>2}:{s} UNKNOWN ACTION ({X})\n", .{ c(4), opcode, r(), reader.buffered() });
 
         reader.toss(payload_len);
         return error.UnknownOpcode;

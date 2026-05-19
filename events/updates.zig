@@ -8,6 +8,8 @@ const Vec3 = @import("../protocol/types.zig").Vec3;
 const character = @import("../db/types/character.zig");
 const inventory = @import("../db/types/inventory.zig");
 
+const c = utils.term.c;
+const r = utils.term.r;
 const BoundedArray = utils.BoundedArray;
 const EndianTable = utils.EndianTable;
 const copyShallow = utils.copyShallow;
@@ -69,7 +71,7 @@ pub const Update = union(enum(u16)) {
                 try codec.writeCuint(writer, payload.len);
                 try writer.writeAll(payload);
 
-                print("    0x{x:0>4}: -> {s}\n", .{ opcode, utils.shortTypeName(T) });
+                print("{s}-> 0x{x:0>4}: {s}{s}\n", .{ c(5), opcode, utils.shortTypeName(T), r() });
             },
         }
     }
