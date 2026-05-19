@@ -135,12 +135,13 @@ pub fn loop(
                 .stop => {},
                 .get_base_info => {
                     const skills = try db.getSkillByCharId(char.id);
+                    const items = try db.getItemsByCharId(char.id);
 
                     try updates_tx.append(.{ .role_status_info = .from(char.*) });
                     try updates_tx.append(.{ .player_combat_stats = try .init() });
-                    try updates_tx.append(.{ .inventory = try .from(.general, &.{}) });
-                    try updates_tx.append(.{ .inventory = try .from(.equipment, &.{}) });
-                    try updates_tx.append(.{ .inventory = try .from(.fashion, &.{}) });
+                    try updates_tx.append(.{ .inventory = try .from(.general, items.slice()) });
+                    try updates_tx.append(.{ .inventory = try .from(.equipment, items.slice()) });
+                    try updates_tx.append(.{ .inventory = try .from(.fashion, items.slice()) });
                     try updates_tx.append(.{ .quest_inventory = .{} });
                     try updates_tx.append(.{ .money = .{ .current = 0, .max = 12774155 } });
                     try updates_tx.append(.{ .skills = try .from(skills.slice()) });
