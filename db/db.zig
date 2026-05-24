@@ -21,11 +21,11 @@ const readFile = @import("file.zig").readFile;
 
 pub const DB = struct {
     io: std.Io,
-    mutex: std.Io.Mutex = .init,
+    gpa: std.mem.Allocator,
 
-    accounts: EntityMap(Account, 1),
+    accounts: EntityMap(Account, null),
     items: EntityMap(Item, 10000),
-    characters: EntityMap(Character, 1),
+    characters: EntityMap(Character, null),
     skills: EntityMap(Skill, 1),
 
     // Calculated mappings
@@ -34,19 +34,125 @@ pub const DB = struct {
     items_by_char: AutoHashMap(CharacterId, ArrayList(*Item)) = undefined,
     skills_by_char: AutoHashMap(CharacterId, ArrayList(*Skill)) = undefined,
 
-    pub fn load(self: *DB, gpa: std.mem.Allocator) !void {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
+    pub fn init(gpa: std.mem.Allocator, io: std.Io) DB {
+        return .{
+            .gpa = gpa,
+            .io = io,
+            .accounts = .init(gpa),
+            .items = .init(gpa),
+            .skills = .init(gpa),
+            .characters = .init(gpa),
+            .account_by_username = .init(gpa),
+            .chars_by_account = .init(gpa),
+            .items_by_char = .init(gpa),
+            .skills_by_char = .init(gpa),
+        };
+    }
+
+    pub fn deinit(self: *DB) void {
+        self.accounts.deinit();
+        self.items.deinit();
+        self.characters.deinit();
+        self.skills.deinit();
+        self.account_by_username.deinit();
+        self.chars_by_account.deinit();
+        self.items_by_char.deinit();
+        self.skills_by_char.deinit();
+    }
+
+    // Create/Get
+    // ----------------------------------------
+
+    pub fn createAccount(self: *DB, account: Account) !AccountId {
+        const next_id: u32 = @truncate(1024 + self.accounts.list.items.len * 16);
+        const ptr = self.accounts.createWithId(account, next_id);
+        try self.account_by_username.put(account.username.slice(), ptr);
+        return ptr.id;
+    }
+
+    pub fn getAccount(self: *DB, id: AccountId) ?*Account {
+        return self.accounts.get(id);
+    }
+
+    pub fn createCharacter(self: *DB, char: Character) !CharacterId {
+        const next_id: u32 = @truncate(char.account_id + getCharactersByAccountId(self, char.account_id).len);
+        const ptr = self.characters.createWithId(char, next_id);
+        var account = try self.chars_by_account.getOrPutValue(char.account_id, .empty);
+        try account.value_ptr.append(self.gpa, ptr);
+        return ptr.id;
+    }
+
+    pub fn getCharacter(self: *DB, id: CharacterId) ?*Character {
+        return self.characters.get(id);
+    }
+
+    pub fn createItem(self: *DB, item: Item) !ItemId {
+        const ptr = self.items.create(item);
+        var char = try self.items_by_char.getOrPutValue(item.char_id, .empty);
+        try char.value_ptr.append(self.gpa, ptr);
+        return ptr.id;
+    }
+
+    pub fn getItem(self: *DB, id: ItemId) ?*Item {
+        return self.items.get(id);
+    }
+
+    pub fn createSkill(self: *DB, skill: Skill) !SkillId {
+        const ptr = self.skills.create(skill);
+        var char = try self.skills_by_char.getOrPutValue(skill.char_id, .empty);
+        try char.value_ptr.append(self.gpa, ptr);
+        return ptr.id;
+    }
+
+    pub fn getSkill(self: *DB, id: SkillId) ?*Item {
+        return self.skills.get(id);
+    }
+
+    // Mappings
+    // ----------------------------------------
+
+    pub fn getAccountByUsername(self: *DB, username: []const u8) ?Account {
+        return if (self.account_by_username.get(username)) |result| result.* else null;
+    }
+
+    pub fn getCharactersByAccountId(self: *DB, id: AccountId) BoundedArray(Character, Account.MAX_CHARACTERS) {
+        const maybe_result = self.chars_by_account.get(id);
+        if (maybe_result) |result| {
+            return deref(Character, result.items, Account.MAX_CHARACTERS);
+        }
+        return .{};
+    }
+
+    pub fn getItemsByCharId(self: *DB, id: CharacterId) BoundedArray(Item, Item.MAX_GENERAL_ITEMS) {
+        const maybe_result = self.items_by_char.get(id);
+        if (maybe_result) |result| {
+            return deref(Item, result.items, Item.MAX_GENERAL_ITEMS);
+        }
+        return .{};
+    }
+
+    pub fn getSkillByCharId(self: *DB, id: CharacterId) BoundedArray(Skill, Character.MAX_SKILLS) {
+        const maybe_result = self.skills_by_char.get(id);
+        if (maybe_result) |result| {
+            return deref(Skill, result.items, Character.MAX_SKILLS);
+        }
+        return .{};
+    }
+
+    // Persistence
+    // ----------------------------------------
+
+    pub fn load(self: *DB) !void {
         inline for (@typeInfo(DB).@"struct".fields) |f| {
             if (!@hasDecl(f.type, "is_entity_map")) continue;
 
             std.debug.print("INFO: loading {s}...", .{f.name});
 
-            var entity_map: f.type = .init(gpa);
+            var entity_map: f.type = .init(self.gpa);
             errdefer entity_map.deinit();
             const path = std.fmt.comptimePrint("data/{s}.txt", .{f.name});
-            const data = try std.Io.Dir.cwd().readFileAlloc(self.io, path, gpa, .unlimited);
-            defer gpa.free(data);
+            const data = try std.Io.Dir.cwd().readFileAlloc(self.io, path, self.gpa, .unlimited);
+            defer self.gpa.free(data);
             const next_id = try readFile(@FieldType(f.type, "map"), &entity_map.map, data);
             entity_map.next_id = next_id;
             @field(self, f.name) = entity_map;
@@ -55,45 +161,39 @@ pub const DB = struct {
 
         std.debug.print("INFO: generating mappings...", .{});
         // Username -> *Account
-        self.account_by_username = .init(gpa);
-        errdefer self.account_by_username.deinit();
         var accounts = self.accounts.map.valueIterator();
+        self.account_by_username.clearRetainingCapacity();
         while (accounts.next()) |account| {
             try self.account_by_username.put(account.username.slice(), account);
         }
 
         // AccountId -> []*Character
-        self.chars_by_account = .init(gpa);
-        errdefer self.chars_by_account.deinit();
         var chars = self.characters.map.valueIterator();
+        self.chars_by_account.clearRetainingCapacity();
         while (chars.next()) |char| {
             const account = try self.chars_by_account.getOrPutValue(char.account_id, .empty);
-            try account.value_ptr.append(gpa, char);
+            try account.value_ptr.append(self.gpa, char);
         }
 
         // CharacterId -> []*Item
-        self.items_by_char = .init(gpa);
-        errdefer self.items_by_char.deinit();
         var items = self.items.map.valueIterator();
+        self.items_by_char.clearRetainingCapacity();
         while (items.next()) |item| {
             const char = try self.items_by_char.getOrPutValue(item.char_id, .empty);
-            try char.value_ptr.append(gpa, item);
+            try char.value_ptr.append(self.gpa, item);
         }
 
         // CharacterId -> []*Skill
-        self.skills_by_char = .init(gpa);
-        errdefer self.skills_by_char.deinit();
         var skills = self.skills.map.valueIterator();
+        self.skills_by_char.clearRetainingCapacity();
         while (skills.next()) |skill| {
             const char = try self.skills_by_char.getOrPutValue(skill.char_id, .empty);
-            try char.value_ptr.append(gpa, skill);
+            try char.value_ptr.append(self.gpa, skill);
         }
         std.debug.print("done.\n", .{});
     }
 
     pub fn save(self: *DB) !void {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
         inline for (@typeInfo(DB).@"struct".fields) |f| {
             if (!@hasDecl(f.type, "is_entity_map")) continue;
 
@@ -108,70 +208,10 @@ pub const DB = struct {
             std.debug.print("done.\n", .{});
         }
     }
-
-    pub fn getAccount(self: *DB, id: AccountId) ?*Account {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        return self.accounts.get(id);
-    }
-
-    pub fn getCharacter(self: *DB, id: CharacterId) ?*Character {
-        self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        return self.characters.get(id);
-    }
-
-    pub fn getItem(self: *DB, id: ItemId) ?*Item {
-        self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        return self.items.get(id);
-    }
-
-    pub fn getSkill(self: *DB, id: SkillId) ?*Item {
-        self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        return self.skills.get(id);
-    }
-
-    pub fn getAccountByUsername(self: *DB, username: []const u8) !?*Account {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        return self.account_by_username.get(username);
-    }
-
-    pub fn getCharactersByAccountId(self: *DB, id: AccountId) !BoundedArray(Character, Account.MAX_CHARACTERS) {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        const maybe_result = self.chars_by_account.get(id);
-        if (maybe_result) |result| {
-            return try deref(Character, result.items, Account.MAX_CHARACTERS);
-        }
-        return .{};
-    }
-
-    pub fn getItemsByCharId(self: *DB, id: CharacterId) !BoundedArray(Item, Item.MAX_GENERAL_ITEMS) {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        const maybe_result = self.items_by_char.get(id);
-        if (maybe_result) |result| {
-            return try deref(Item, result.items, Item.MAX_GENERAL_ITEMS);
-        }
-        return .{};
-    }
-
-    pub fn getSkillByCharId(self: *DB, id: CharacterId) !BoundedArray(Skill, Character.MAX_SKILLS) {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        const maybe_result = self.skills_by_char.get(id);
-        if (maybe_result) |result| {
-            return try deref(Skill, result.items, Character.MAX_SKILLS);
-        }
-        return .{};
-    }
 };
 
-fn deref(comptime T: type, slice: []*T, comptime cap: usize) !BoundedArray(T, cap) {
+fn deref(comptime T: type, slice: []*T, comptime cap: usize) BoundedArray(T, cap) {
     var result: BoundedArray(T, cap) = .{};
-    for (slice) |p| try result.append(p.*);
+    for (slice) |p| result.append(p.*) catch {};
     return result;
 }

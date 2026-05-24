@@ -1,37 +1,58 @@
 const std = @import("std");
 
-pub fn EntityMap(comptime V: type, comptime start_id: u32) type {
+pub fn EntityMap(comptime T: type, comptime start_id: ?u32) type {
     return struct {
-        map: std.AutoHashMap(u32, V),
-        next_id: u32 = start_id,
-        // free_ids: std.ArrayList(u32) = .empty,
+        gpa: std.mem.Allocator,
+        map: std.AutoHashMap(u32, T),
+        list: std.ArrayList(*T),
+        next_id: u32 = start_id orelse 0,
 
         const Self = @This();
 
-        // pub const Id = @FieldType(V, "id");
+        // pub const Id = @FieldType(T, "id");
         pub const is_entity_map = true;
 
         pub fn init(gpa: std.mem.Allocator) Self {
-            return .{ .map = .init(gpa) };
+            return .{ .gpa = gpa, .map = .init(gpa), .list = .empty };
         }
 
         pub fn deinit(self: *Self) void {
             self.map.deinit();
+            self.list.deinit(self.gpa);
         }
 
-        pub fn get(self: *Self, id: u32) ?*V {
+        pub fn get(self: *Self, id: u32) ?*T {
             return self.map.getPtr(id);
         }
 
-        pub fn create(self: *Self, item: V) !u32 {
+        pub fn create(self: *Self, item: T) *T {
+            if (start_id == null) @compileError("Use createWithId instead");
             const id = self.getNextId();
-            try self.map.put(id, item);
-            self.map.getPtr(id).?.id = id;
-            return id;
+
+            self.map.put(id, item) catch {
+                std.debug.panic("The system is dying anyway", .{});
+            };
+            const ptr = self.map.getPtr(id).?;
+            ptr.id = id;
+            self.list.append(self.gpa, ptr) catch {
+                std.debug.panic("The system is dying anyway", .{});
+            };
+            return ptr;
+        }
+
+        pub fn createWithId(self: *Self, item: T, id: u32) *T {
+            self.map.put(id, item) catch {
+                std.debug.panic("The system is dying anyway", .{});
+            };
+            const ptr = self.map.getPtr(id).?;
+            ptr.id = id;
+            self.list.append(self.gpa, ptr) catch {
+                std.debug.panic("The system is dying anyway", .{});
+            };
+            return ptr;
         }
 
         pub fn delete(self: *Self, id: u32) !void {
-            // self.free_ids.append(self.gpa, id);
             self.map.remove(id);
         }
 
@@ -39,12 +60,5 @@ pub fn EntityMap(comptime V: type, comptime start_id: u32) type {
             defer self.next_id += 1;
             return self.next_id;
         }
-
-        // TODO: generations
-        // fn getNextId(self: *Self) u32 {
-        //     if (self.free_ids.pop()) |id| return id;
-        //     defer self.next_id += 1;
-        //     return self.next_id;
-        // }
     };
 }

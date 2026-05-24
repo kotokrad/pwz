@@ -47,7 +47,6 @@ fn writeValue(comptime T: type, writer: *Writer, value: T) !void {
                 }
             } else try writeInlineStruct(T, writer, value);
         },
-        .@"enum" => try writer.print("{}\n", .{@intFromEnum(value)}),
         .array => try writer.print("({X})\n", .{&value}),
         .optional => |info| {
             if (value == null) try writer.print("null\n", .{});
@@ -140,7 +139,7 @@ fn parseValue(comptime T: type, value: []const u8) !T {
         .float => return try std.fmt.parseFloat(f32, value),
         .bool => return std.mem.eql(u8, value, "true"),
         .array => return try parseArray(T, value),
-        .@"enum" => |info| return @enumFromInt(try std.fmt.parseInt(info.tag_type, value, 10)),
+        .@"enum" => return std.meta.stringToEnum(T, value[1..]) orelse ParseError.InvalidField,
         // Here handle special cases
         // BoundedArray(u8, N) -> C0FFEE
         // BoundedArray(u32, N) -> 123,456,789

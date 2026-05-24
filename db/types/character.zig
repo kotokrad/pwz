@@ -3,6 +3,7 @@ const std = @import("std");
 const Vec3 = @import("../../protocol/types.zig").Vec3;
 const BoundedArray = @import("../../utils/utils.zig").BoundedArray;
 const String = @import("../../utils/utils.zig").String;
+const AccountId = @import("account.zig").AccountId;
 
 pub const CharacterId = u32;
 pub const SkillId = u32;
@@ -58,7 +59,7 @@ pub const CharacterFlags = packed struct(u32) {
 
 pub const Character = struct {
     id: CharacterId = undefined,
-    account_id: u32,
+    account_id: AccountId,
 
     // Base
     gender: u8 = 0,
@@ -68,12 +69,9 @@ pub const Character = struct {
     cultivation: u16 = 0,
     name: String(16),
     custom_data: BoundedArray(u8, 256),
-    // equipment: BoundedArray(u32, MAX_EQUIPMENT_ITEMS),
-    is_active: bool = true,
-    delete_time: DateTime = 0,
-    create_time: DateTime = 0,
-    lastlogin_time: DateTime = 12312311,
+
     position: Vec3,
+    angle: u8 = 0,
 
     // Status
     hp: u32 = 0,
@@ -129,41 +127,42 @@ pub const Character = struct {
     // defense_physical: u32 = 0,
     // evasion: u32 = 0,
 
-    // Flags
+    is_active: bool = true,
+    delete_time: DateTime = 0,
+    create_time: DateTime = 0,
+    lastlogin_time: DateTime = 12312311,
+
     flags: CharacterFlags = .{},
-
-    // World
-    angle: u8 = 0,
-
-    // Etc
-    // skills: BoundedArray(Skill, MAX_SKILLS),
-
     ui_config: BoundedArray(u8, 512),
 
+    crc: u16 = 0xf2fe,
+    custom_crc: u16 = 0,
+    sec_level: u8 = 0,
+
     pub const MAX_SKILLS = 32;
-};
 
-pub fn getExampleChar() !Character {
-    var ui_config_buf: [512]u8 = undefined;
-    return .{
-        .account_id = 1,
+    pub fn init(name: []const u8, account_id: AccountId) !Character {
+        var ui_config_buf: [512]u8 = undefined;
+        return .{
+            .account_id = account_id,
 
-        .race = 1,
-        .class = 6,
-        .level = 86,
-        .name = try .fromSlice("Hallo"),
+            .race = 1,
+            .class = 6,
+            .level = 86,
+            .cultivation = 8,
+            .name = try .fromSlice(name),
 
-        .hp = 3000,
-        .hp_max = 3000,
-        .mp = 7000,
-        .mp_max = 7000,
-        .experience = 100_000,
-        .spirit = 100_500_000,
-        .chi = 299,
-        .chi_max = 299,
+            .hp = 3000,
+            .hp_max = 3000,
+            .mp = 7000,
+            .mp_max = 7000,
+            .experience = 100_000,
+            .spirit = 100_500_000,
+            .chi = 299,
+            .chi_max = 299,
 
-        .custom_data = try .fromSlice(&.{
-            // zig fmt: off
+            .custom_data = try .fromSlice(&.{
+                // zig fmt: off
             0,112,0,16,138,128,163,0,62,0,62,0,50,145,137,0,44,0,102,
             118,128,128,128,113,128,131,128,128,128,128,128,128,128,
             128,128,112,139,128,128,128,115,128,74,0,51,0,93,1,48,0,
@@ -175,14 +174,15 @@ pub fn getExampleChar() !Character {
             17,17,17,255,17,17,17,255,21,21,21,255,19,18,19,255,18,17,
             18,255,0,0,0,0,242,244,248,255,123,110,110,110,117,128,0,0
             // zig fmt: on
-        }),
-        .create_time = 1_753_704_763,
-        .lastlogin_time = 1_753_704_763,
-        // .position = .{ .x = 111, .y = 40, .z = 40 }, // GM zone
-        .position = .{ .x = 330, .y = 440, .z = 40 }, // 19
+            }),
+            .create_time = 1_753_704_763,
+            .lastlogin_time = 1_753_704_763,
+            // .position = .{ .x = 111, .y = 40, .z = 40 }, // GM zone
+            .position = .{ .x = 330, .y = 440, .z = 40 }, // 19
 
-        .angle = 120,
+            .angle = 120,
 
-        .ui_config = try .fromSlice(try std.fmt.hexToBytes(&ui_config_buf, "c2eb0b227801dbc3ccc0c0cec0c0f01f0b000a3330413188cd082280e0351083c441e01510038d00f3f9410240c002c43079109f15cae703718000641f082c076290b52036cc6c109bdf02e11e107f148c86c06808600f011360c6e100661f18c0ae6a988a9e81941dc4f80e54bec0ca18107d0d4840cb2b68d081c290c10848b03032448b1994382832093030fcf8efa808d20a62333078826967ab1886a2fcf4a2c45c05b7cc9cd462058d0a0b06cd9830471fffa098d49cd4dcd4bc921886e2d42297c492c4189fc4cafcd2921853060b5373bdccbc4c06d13f7fa2c5166cae615800a443d4575583cc0599ceb0b946f40d9fadc49abfd1620e25968ae03214ec3a700483ddcf08212114d0c9405d4002a21d9d03f2104406e277089b5a8e03068807d09189c7cb181a7ecc65e885d2207f1840d93f7a64445f083828820a7c105be0e96c05a06f151c19181aec99806e83b90ea4895a000078ab7ae4")),
-    };
-}
+            .ui_config = try .fromSlice(try std.fmt.hexToBytes(&ui_config_buf, "c2eb0b227801dbc3ccc0c0cec0c0f01f0b000a3330413188cd082280e0351083c441e01510038d00f3f9410240c002c43079109f15cae703718000641f082c076290b52036cc6c109bdf02e11e107f148c86c06808600f011360c6e100661f18c0ae6a988a9e81941dc4f80e54bec0ca18107d0d4840cb2b68d081c290c10848b03032448b1994382832093030fcf8efa808d20a62333078826967ab1886a2fcf4a2c45c05b7cc9cd462058d0a0b06cd9830471fffa098d49cd4dcd4bc921886e2d42297c492c4189fc4cafcd2921853060b5373bdccbc4c06d13f7fa2c5166cae615800a443d4575583cc0599ceb0b946f40d9fadc49abfd1620e25968ae03214ec3a700483ddcf08212114d0c9405d4002a21d9d03f2104406e277089b5a8e03068807d09189c7cb181a7ecc65e885d2207f1840d93f7a64445f083828820a7c105be0e96c05a06f151c19181aec99806e83b90ea4895a000078ab7ae4")),
+        };
+    }
+};
