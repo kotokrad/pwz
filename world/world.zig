@@ -185,7 +185,7 @@ fn handleAction(db: *DB, world: *World, session: *Session, char: *Character, act
         .respawn => {},
         .enter_dungeon => {},
         .move_item => {},
-        .move_equipment => {},
-        .take_off_equipment => {},
+        .swap_equipped => {},
+        .take_off_item => {},
     }
 }

@@ -21,16 +21,16 @@ const shortTypeName = utils.shortTypeName;
 ///
 pub const Action = union(enum(u16)) {
     // zig fmt: off
-    move: Move                           = 0x00,
-    stop: Stop                           = 0x07,
-    respawn: Respawn                     = 0x04,
-    get_base_info: GetBaseInfo           = 0x27,
-    gm_teleport: GmTeleport              = 0x13,
-    stop_meditation: StopMeditation      = 0x2F,
-    enter_dungeon: EnterDungeon          = 0x56,
-    move_item: MoveItem                  = 0x0C,
-    swap_equipped_item: SwapEquippedItem = 0x10,
-    take_off_equipment: TakeOffItem      = 0x11,
+    move: Move                      = 0x00,
+    stop: Stop                      = 0x07,
+    respawn: Respawn                = 0x04,
+    get_base_info: GetBaseInfo      = 0x27,
+    gm_teleport: GmTeleport         = 0x13,
+    stop_meditation: StopMeditation = 0x2F,
+    enter_dungeon: EnterDungeon     = 0x56,
+    move_item: MoveItem             = 0x0C,
+    swap_equipped: SwapEquippedItem = 0x10,
+    take_off_item: TakeOffItem      = 0x11,
     // zig fmt: on
 
     pub fn read(reader: *Reader, arena: std.mem.Allocator) !Action {
