@@ -125,6 +125,8 @@ pub fn loop(
                     // try updates_tx.send(.{ .role_world_info = updated_info });
                 },
                 },
+                .public_message => |payload| try chat.handlePublicMessage(db, &world, payload),
+                .private_message => |payload| try chat.handlePrivateMessage(db, &world, payload),
                 .action => |payload| {
                     const session = world.sessions.get(payload.session_id) orelse {
                         print("{s}ERROR: [World] action session {} does not exist{s}\n", .{ c(1), payload.session_id, r() });

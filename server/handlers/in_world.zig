@@ -119,9 +119,22 @@ fn handleCheckNewMail(session: *Session, payload: CheckNewMail) !void {
 fn handlePublicMessage(session: *Session, payload: SendPublicMessage) !void {
     // TODO: forward to World and listen for incoming messages to send these packets.
     // Right now World can only send Updates, so need to set up another Message channel
+    try session.tx.send(.{ .public_message = .{
+        .session_id = session.id.?,
+        .channel = payload.channel,
+        .from_id = payload.from_id,
+        .text = payload.message,
+    } });
 }
 
 fn handlePrivateMessage(session: *Session, payload: SendPrivateMessage) !void {
+    try session.tx.send(.{ .private_message = .{
+        .from_id = payload.from_id,
+        .from_name = payload.from_name,
+        .to_id = payload.to_id,
+        .to_name = payload.to_name,
+        .text = payload.message,
+    } });
 }
 
 fn handlePlayerBaseInfo(session: *Session, payload: PlayerBaseInfo) !void {
