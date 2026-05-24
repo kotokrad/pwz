@@ -101,8 +101,8 @@ fn VecGeneric(
                 return try reader.take(len);
             } else {
                 var result: std.ArrayList(T) = .empty;
-                for (len) |item| result.append(arena, deserialize(T, reader, item, arena));
-                return .{ .list = result };
+                for (0..len) |_| try result.append(arena, try deserialize(T, reader, arena));
+                return .{ .list = try .fromSlice(result.items) };
             }
         }
     };

@@ -4,11 +4,12 @@ const print = std.debug.print;
 const codec = @import("../../protocol/codec.zig");
 const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
-const events = @import("../../events/events.zig");
+const Reply = @import("../../messages/channel.zig").Reply;
 const BoundedArray = @import("../../utils/utils.zig").BoundedArray;
 const Session = @import("../session.zig").Session;
+const Character = @import("../../db/types/character.zig").Character;
+const Item = @import("../../db/types/inventory.zig").Item;
 
-const Reply = events.Reply;
 const InPacket = packets.InPacket;
 const RoleList = packets.RoleList;
 const RoleListRe = packets.RoleListRe;
@@ -28,15 +29,24 @@ pub fn handleCharList(session: *Session, packet: InPacket) !void {
 }
 
 fn handleRoleList(session: *Session, payload: RoleList) !void {
-    const characters = try session.db.getCharactersByAccountId(payload.account_id);
+    const characters = try session.tx.request(BoundedArray(Character, 8), .get_characters, .{
+        .account_id = payload.account_id,
+    });
+
     var role_info_list: BoundedArray(RoleInfo, 8) = .{};
     for (characters.slice()) |char| {
-        const items = try session.db.getItemsByCharId(char.id);
+        const items = try session.tx.request(BoundedArray(Item, Item.MAX_GENERAL_ITEMS), .get_items, .{ .char_id = char.id });
         const role_info = try RoleInfo.from(char, items.slice());
         try role_info_list.append(role_info);
     }
 
-    const role_list_re = RoleListRe{ .result = 0, .next_slot = 0xFFFFFFFF, .account_id = session.account_id.?, .session_id = session.id.?, .characters = role_info_list };
+    const role_list_re = RoleListRe{
+        .result = 0,
+        .next_slot = 0xFFFFFFFF,
+        .account_id = session.account_id.?,
+        .session_id = session.id.?,
+        .characters = role_info_list,
+    };
 
     try session.enqueuePacket(.{ .role_list_re = role_list_re });
 }

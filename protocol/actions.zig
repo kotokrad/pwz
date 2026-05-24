@@ -3,7 +3,6 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 const Reader = std.Io.Reader;
 
-const channel = @import("channel.zig");
 const codec = @import("../protocol/codec.zig");
 const utils = @import("../utils/utils.zig");
 const Vec3 = @import("../protocol/types.zig").Vec3;
@@ -12,7 +11,6 @@ const SessionId = @import("../world/world.zig").SessionId;
 const c = utils.term.c;
 const r = utils.term.r;
 const shortTypeName = utils.shortTypeName;
-const Channel = channel.Channel;
 
 /// `Actions` are mapped to `subpackets` that server receives in a `Gamedata` packet.
 /// They are `fire and forget`, and will be processed in the game loop
@@ -21,10 +19,7 @@ const Channel = channel.Channel;
 /// and sent in one `Container` packet and the end of the tick.
 /// (but for now server responds immediately)
 ///
-/// We have to send it together with the session id
-pub const Action = struct { SessionId, ActionPayload };
-
-pub const ActionPayload = union(enum(u16)) {
+pub const Action = union(enum(u16)) {
     // zig fmt: off
     move: Move                           = 0x00,
     stop: Stop                           = 0x07,
@@ -34,11 +29,11 @@ pub const ActionPayload = union(enum(u16)) {
     stop_meditation: StopMeditation      = 0x2F,
     enter_dungeon: EnterDungeon          = 0x56,
     move_item: MoveItem                  = 0x0C,
-    move_equipment: MoveEquipment        = 0x10,
-    take_off_equipment: TakeOffEquipment = 0x11,
+    swap_equipped_item: SwapEquippedItem = 0x10,
+    take_off_equipment: TakeOffItem      = 0x11,
     // zig fmt: on
 
-    pub fn read(reader: *Reader, arena: std.mem.Allocator) !ActionPayload {
+    pub fn read(reader: *Reader, arena: std.mem.Allocator) !Action {
         const lenPlusOne = try codec.readCuint(reader);
         const len = try codec.readCuint(reader);
         assert(lenPlusOne - len == codec.cuintSize(len));
@@ -50,9 +45,9 @@ pub const ActionPayload = union(enum(u16)) {
             print("INFO: [Actions] waiting for more data ({}/{})...\n", .{ reader.bufferedLen(), payload_len });
             try reader.fill(payload_len);
         }
-        inline for (@typeInfo(std.meta.Tag(ActionPayload)).@"enum".fields) |field| {
+        inline for (@typeInfo(std.meta.Tag(Action)).@"enum".fields) |field| {
             if (field.value == opcode) {
-                const T = @FieldType(ActionPayload, field.name);
+                const T = @FieldType(Action, field.name);
                 // const hex = reader.buffered();
                 const payload = try codec.deserialize(T, reader, arena);
                 print("{s}<- 0x{x:0>2}: {s}{s}\n", .{ c(4), opcode, shortTypeName(T), r() });
@@ -61,11 +56,16 @@ pub const ActionPayload = union(enum(u16)) {
                 if (reader.bufferedLen() > 0) {
                     print("WARNING: [Actions] {any} has some leftover data: {X}\n", .{ T, reader.buffered() });
                 }
-                return @unionInit(ActionPayload, field.name, payload);
+                return @unionInit(Action, field.name, payload);
             }
         }
 
+        // Reduce noise
+        // 0x31 - ??
+        // 0x4B - ??
+        // if (opcode != 0x31 and opcode != 0x4B) {
         print("{s}<- 0x{X:0>2}:{s} UNKNOWN ACTION ({X})\n", .{ c(4), opcode, r(), reader.buffered() });
+        // }
 
         reader.toss(payload_len);
         return error.UnknownOpcode;
@@ -84,10 +84,10 @@ const MoveFlags = packed struct(u8) {
 };
 
 const Move = struct {
-    pos: Vec3,
-    dest: Vec3,
-    unk1: u16,
-    unk2: u16,
+    from: Vec3,
+    to: Vec3,
+    use_time: u16, // ?
+    speed: u16, // ?
     flags: MoveFlags,
     counter: u16,
 };
@@ -127,12 +127,12 @@ const MoveItem = struct {
     slot_to: u8,
 };
 
-const MoveEquipment = struct {
+const SwapEquippedItem = struct {
     slot_from: u8,
     slot_to: u8,
 };
 
-const TakeOffEquipment = struct {
+const TakeOffItem = struct {
     slot_from: u8,
     slot_to: u8,
 };

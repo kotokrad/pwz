@@ -34,6 +34,8 @@ pub const Update = union(enum(u16)) {
     nearby_players: NearbyPlayers          = 0x04,
     server_config_info: ServerConfigInfo   = 0xCE,
     unknown_010b: Unknown010B              = 0x010B,
+    unknown_0120: Unknown0120              = 0x0120,
+    unknown_0105: Unknown0105              = 0x0105,
     safety_lock_status: SafetyLockStatus   = 0x00,
     enter_safe_zone: EnterSafeZone         = 0xA4,
     enter_pvp_zone: EnterPvpZone           = 0xA5,
@@ -108,11 +110,7 @@ pub const RoleWorldInfo = struct {
     flags: CharacterFlags,
 
     pub fn from(char: Character) RoleWorldInfo {
-        return copyShallow(Character, RoleWorldInfo, char, .{
-            .crc = 0x15ac,
-            .custom_crc = 0,
-            .sec_level = 0,
-        });
+        return copyShallow(Character, RoleWorldInfo, char, .{});
     }
 
     pub fn setFlag(self: *RoleWorldInfo, flag: u5) void {
@@ -122,19 +120,18 @@ pub const RoleWorldInfo = struct {
 
 const NearbyPlayer = struct {
     char_id: u32,
+    unk: u8 = 0,
     position: Vec3,
     crc: u16,
     custom_crc: u16,
     angle: u8,
     sec_level: u8,
-    flags: CharacterFlags,
+    flags: u32, // overriding CharacterFlags,
 
     pub fn from(char: Character) NearbyPlayer {
         return copyShallow(Character, NearbyPlayer, char, .{
-            .char_id = 5,
-            .crc = 0x15ac,
-            .custom_crc = 0,
-            .sec_level = 0,
+            .flags = 0,
+            .char_id = char.id,
         });
     }
 };
@@ -160,6 +157,14 @@ pub const ServerConfigInfo = struct {
 };
 
 pub const Unknown010B = struct {};
+pub const Unknown0120 = struct {
+    unk: u32 = 0xFFFFFFFF,
+};
+pub const Unknown0105 = struct {
+    unk0: u8 = 1,
+    unk1: u32 = 0xd084116a,
+    unk2: u32 = 0,
+};
 
 pub const SafetyLockStatus = struct {
     enabled: u8,
@@ -179,7 +184,7 @@ pub const EnterSafeZone = struct {};
 pub const EnterPvpZone = struct {};
 
 pub const PlayerCombatStats = struct {
-    data: [168]u8,
+    data: [176]u8,
 
     // NOTE: It's supposed to be this:
     // free_stats: u32 = 0,
@@ -187,10 +192,14 @@ pub const PlayerCombatStats = struct {
     // def_lvl: u32 = 0,
     // crit_chance: u32 = 0,
     // crit_multiplier: u32 = 0,
+
     // vitality: u32 = 0,
     // intelligence: u32 = 0,
     // strength: u32 = 0,
     // dexterity: u32 = 0,
+
+    // hp_max: u32 = 0,
+    // mp_max: u32 = 0,
     // hp_regen: u32 = 0,
     // mp_regen: u32 = 0,
     // walk_speed: f32 = 0,
@@ -225,8 +234,8 @@ pub const PlayerCombatStats = struct {
     // character.chi_max at the end?
 
     pub fn init() !PlayerCombatStats {
-        var out: [168]u8 = undefined;
-        _ = try std.fmt.hexToBytes(&out, "00000000000000000000000001000000000000000500000005000000050000000500000041000000370000000400000002000000000000406666a640000040400000a04028000000070000000b0000001e0000006666a2410000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000200000002000000020000000200000002000000030000001e00000000000000");
+        var out: [176]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&out, "0000000000000000000000000053110000000000000000000053110027262600272626002726260027262600700000ea00000000003401007000006d3c0000400000a040000040400000a04032000000272626000600000000000000333353400000000000000000000000000000000000000000000000000000000000000000000000000000000000531100005311007000006d7000006d7000006d7000006d7000006d030000003200000000000000");
         return .{ .data = out };
     }
 };

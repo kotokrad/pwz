@@ -46,21 +46,22 @@ pub const ErrorCode = enum(u8) {
     // zig fmt: on
 };
 
-pub const ServerFlags = packed struct(u16) {
-    unk0: u1 = 0,
+pub const ServerFlags = packed struct(u8) {
+    unk00: u1 = 0,
     is_money_bonus: bool = false,
     is_drop_bonus: bool = false,
     is_spirit_bonus: bool = false,
-    unk1: u3 = 0,
-    is_pvp: bool = false,
-    unk2: u8 = 0,
+    unk04: u1 = 1, // default PWI 1.4.4
+    unk05: u1 = 0,
+    unk06: u1 = 1, // default PWI 1.4.4
+    is_pvp: bool = true,
 };
 
 pub const ChallengeData = struct {
     server_load: u8,
-    unk1: u16 = 0,
+    unk0: u16 = 0,
     flags: ServerFlags,
-    unk2: u32 = 0,
+    unk2: u32 = 1,
     random_bytes: [8]u8,
 };
 
@@ -141,6 +142,42 @@ pub const RoleInfo = struct {
             .character_mode = try .fromSlice(&.{ 1, 0, 0, 0, 1, 0, 0, 0 }),
             .referrer_id = 0xFFFFFFFF,
             .cash_add = 362_000,
+        });
+    }
+};
+
+pub const RoleBase = struct {
+    version: u8 = 1,
+    id: u32,
+    name: UTF16String(16),
+    race: u32,
+    class: u32,
+    gender: u8,
+    custom_data: BoundedArray(u8, 256),
+    config_data: BoundedArray(u8, 8),
+    custom_stamp: u32 = 0,
+    is_active: bool,
+    delete_time: u32,
+    create_time: u32,
+    lastlogin_time: u32,
+    ban_list_size: u8 = 0,
+    help_states_size: u8 = 0,
+    spouse_id: u32 = 0,
+    account_id: u32,
+    reserved: u32 = 0,
+
+    pub const endian: EndianTable(@This(), .little) = .{
+        .id = .big,
+        .race = .big,
+        .class = .big,
+    };
+
+    pub fn from(char: character.Character) !RoleBase {
+        return try copyDeep(character.Character, RoleBase, char, .{
+            .name = .fromString(char.name),
+            .class = char.class,
+            .race = char.race,
+            .config_data = try .fromSlice(&.{}),
         });
     }
 };

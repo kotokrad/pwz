@@ -54,6 +54,14 @@ pub fn getEndianFor(comptime T: type, comptime name: []const u8) ?std.builtin.En
     return endian;
 }
 
+pub fn BE(comptime T: type) type {
+    return struct {
+        value: T,
+
+        pub const endian: EndianTable(@This(), .big) = .{};
+    };
+}
+
 // Struct with fields that are present in both F and T but have different types
 fn FieldsTypeDiff(comptime F: type, comptime T: type) type {
     const fields = @typeInfo(T).@"struct".fields;
@@ -75,7 +83,7 @@ fn FieldsTypeDiff(comptime F: type, comptime T: type) type {
             field_attrs[i] = .{
                 .@"comptime" = false,
                 .@"align" = f.alignment,
-                .default_value_ptr = null,
+                .default_value_ptr = f.default_value_ptr,
             };
             i = i + 1;
         }

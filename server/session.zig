@@ -4,8 +4,9 @@ const assert = std.debug.assert;
 const Io = std.Io;
 
 const utils = @import("../utils/utils.zig");
-const events = @import("../events/events.zig");
-const DB = @import("../db/db.zig").DB;
+const Channel = @import("../messages/channel.zig").Channel;
+const ClientMessage = @import("../messages/messages.zig").ClientMessage;
+const ServerMessage = @import("../messages/messages.zig").ServerMessage;
 const AccountId = @import("../db/types/account.zig").AccountId;
 const CharacterId = @import("../db/types/character.zig").CharacterId;
 const InPacket = @import("../protocol/packets.zig").InPacket;
@@ -16,15 +17,11 @@ const sendChallenge = @import("handlers/auth.zig").sendChallenge;
 const handleAuth = @import("handlers/auth.zig").handleAuth;
 const handleCharList = @import("handlers/char_list.zig").handleCharList;
 const handleInWorld = @import("handlers/in_world.zig").handleInWorld;
+const processServerMessages = @import("handlers/server_messages.zig").processServerMessages;
 
 const Rc4Writer = utils.rc4.Rc4Writer;
 const Rc4Reader = utils.rc4.Rc4Reader;
 const MppcWriter = utils.mppc.MppcWriter;
-
-const Channel = events.Channel;
-const Message = events.Message;
-const Action = events.Action;
-const Update = events.Update;
 
 const SessionId = u32;
 
@@ -35,7 +32,7 @@ const Stage = union(enum) {
 };
 
 const AuthState = struct {
-    challenge: ?[17]u8 = null,
+    challenge: ?[16]u8 = null,
     hash: ?[16]u8 = null,
     username: ?[]const u8 = null,
 };
@@ -49,9 +46,6 @@ pub const Session = struct {
     account_id: ?AccountId = null,
     char_id: ?CharacterId = null,
 
-    // DB is meant to be only used during .auth and .char_list phases
-    // to fetch account and characters directly.
-    db: *DB,
     socket: Io.net.Socket,
     reader: *Io.Reader,
     writer: *Io.Writer,
@@ -62,19 +56,12 @@ pub const Session = struct {
     compressor: ?*Io.Writer = null,
     inbox: *Channel(Owned(InPacket)),
     outbox: *std.ArrayList(OutPacket),
-    messages_tx: *Channel(Message),
-    actions_tx: *Channel(Action),
-    updates_rx: *Channel(Update),
+    tx: *Channel(ClientMessage),
+    rx: *Channel(ServerMessage),
 
     pub fn sendPendingPackets(self: Session) !void {
         const writer = self.compressor orelse self.writer;
-        const updates = try self.updates_rx.drain();
 
-        if (updates.len > 0) {
-            errdefer print("error: sending pending updates\n", .{});
-            const packet: OutPacket = .{ .container = .{ .list = try .fromSlice(updates) } };
-            try packet.write(writer, self.gpa);
-        }
         for (self.outbox.items) |packet| {
             errdefer print("error: sending pending packets\n", .{});
             try packet.write(writer, self.gpa);
@@ -133,26 +120,17 @@ pub fn start(
     io: Io,
     gpa: std.mem.Allocator,
     stream: *Io.net.Stream,
-    messages_tx: *Channel(Message),
-    actions_tx: *Channel(Action),
-    db: *DB,
+    tx: *Channel(ClientMessage),
 ) void {
     print("INFO: [Session] Client {f} connected\n", .{stream.socket.address});
-    startSession(io, gpa, stream, messages_tx, actions_tx, db) catch |err| {
+    startSession(io, gpa, stream, tx) catch |err| {
         print("ERROR: [Session] Client {f} disconnected with error: {}\n", .{ stream.socket.address, err });
         stream.shutdown(io, .both) catch {};
         stream.close(io);
     };
 }
 
-fn startSession(
-    io: Io,
-    gpa: std.mem.Allocator,
-    stream: *Io.net.Stream,
-    messages_tx: *Channel(Message),
-    actions_tx: *Channel(Action),
-    db: *DB,
-) !void {
+fn startSession(io: Io, gpa: std.mem.Allocator, stream: *Io.net.Stream, tx: *Channel(ClientMessage)) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     var reader_buf: [4096]u8 = undefined;
@@ -162,23 +140,21 @@ fn startSession(
     var inbox: Channel(Owned(InPacket)) = try .init(io, arena.allocator(), 64);
     const outbox_buf = try arena.allocator().alloc(OutPacket, 64);
     var outbox: std.ArrayList(OutPacket) = .initBuffer(outbox_buf);
-    var updates_rx: Channel(Update) = try .init(io, arena.allocator(), 128);
+    var rx: Channel(ServerMessage) = try .init(io, arena.allocator(), 128);
 
     var session: Session = .{
         .io = io,
         .gpa = gpa,
         .arena = arena.allocator(),
 
-        .db = db,
         .stage = .auth,
         .socket = stream.socket,
         .reader = &stream_reader.interface,
         .writer = &stream_writer.interface,
         .inbox = &inbox,
         .outbox = &outbox,
-        .messages_tx = messages_tx,
-        .actions_tx = actions_tx,
-        .updates_rx = &updates_rx,
+        .tx = tx,
+        .rx = &rx,
     };
 
     print("INFO: [Session] Sending challenge...\n", .{});
@@ -218,6 +194,7 @@ fn startSession(
     // Async loop
     while (true) {
         errdefer print("error: async loop\n", .{});
+        try processServerMessages(&session);
         try session.sendPendingPackets();
         for (try session.inbox.drain()) |packet| {
             try processPacket(&session, packet);
@@ -233,7 +210,7 @@ fn streamReader(session: *Session) !void {
         const reader = session.decryptor.?;
 
         if (InPacket.read(reader, arena.allocator())) |packet| {
-            session.inbox.append(.{ .arena = arena, .value = packet }) catch break;
+            session.inbox.send(.{ .arena = arena, .value = packet }) catch break;
         } else |err| {
             arena.deinit();
             switch (err) {

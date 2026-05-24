@@ -1,6 +1,5 @@
 const std = @import("std");
 const print = std.debug.print;
-const Md5 = std.crypto.hash.Md5;
 const HmacMd5 = std.crypto.auth.hmac.HmacMd5;
 
 const codec = @import("../../protocol/codec.zig");
@@ -8,7 +7,7 @@ const packets = @import("../../protocol/packets.zig");
 const types = @import("../../protocol/types.zig");
 const Session = @import("../session.zig").Session;
 const SessionId = @import("../../world/world.zig").SessionId;
-const Reply = @import("../../events/events.zig").Reply;
+const Account = @import("../../db/types/account.zig").Account;
 
 const InPacket = packets.InPacket;
 const ServerError = packets.ServerError;
@@ -19,11 +18,12 @@ const LoginRequest = packets.LoginRequest;
 const KeyExchange = packets.KeyExchange;
 const OnlineAnnounce = packets.OnlineAnnounce;
 
-fn getHmacMd5(username: []const u8, password: []const u8, challenge: [17]u8) [16]u8 {
-    var hmac: HmacMd5 = .init(&Md5.hashResult(username ++ password));
+fn getHmacMd5(account_hash: [16]u8, challenge: [16]u8) [16]u8 {
+    var hmac: HmacMd5 = .init(&account_hash);
     hmac.update(&challenge);
     var hash: [16]u8 = undefined;
     hmac.final(&hash);
+    return hash;
 }
 
 pub fn handleAuth(session: *Session, packet: InPacket) !void {
@@ -39,25 +39,26 @@ pub fn handleAuth(session: *Session, packet: InPacket) !void {
 
 pub fn sendChallenge(session: *Session) !void {
     const challenge_data = ChallengeData{
-        .server_load = 0x10,
-        .flags = .{ .is_pvp = true },
+        .server_load = 0x00,
+        // .flags = .{ .is_pvp = true },
+        .flags = .{},
         .random_bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8 },
     };
 
     const challenge = Challenge{
         .data = .init(challenge_data),
-        .version = .{ 0, 1, 4, 2 },
+        .version = .{ 0, 1, 4, 4 },
         .auth_method = 0,
         .crc_signature = .init(.{
-            0x33, 0x30, 0x30, 0x30, 0x30, 0x30, 0x31, 0x62, 0x34, 0x62, 0x36, 0x35, 0x39, 0x62,
-            0x32, 0x65, 0x31, 0x63, 0x34, 0x61, 0x61, 0x35, 0x66, 0x39, 0x37, 0x38,
+            0x33, 0x30, 0x30, 0x30, 0x30, 0x30, 0x33, 0x63, 0x35, 0x64, 0x34, 0x64, 0x36, 0x37,
+            0x35, 0x63, 0x65, 0x62, 0x34, 0x63, 0x66, 0x39, 0x66, 0x63, 0x35, 0x36,
         }),
         .exp_multiplier = 0,
     };
 
     // Saving serialized challenge_data
     // it will be used to hash the auth creds
-    var buf: [17]u8 = undefined;
+    var buf: [16]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
     try codec.serialize(ChallengeData, &writer, challenge_data);
     session.auth.challenge = buf;
@@ -71,16 +72,20 @@ fn handleLoginRequest(session: *Session, payload: LoginRequest) !void {
     session.auth.hash = hash;
     session.auth.username = try session.arena.dupe(u8, username);
 
-    const account = try session.db.getAccountByUsername(username);
+    const account = try session.tx.request(?Account, .get_account, .{ .username = username }) orelse {
+        return try sendServerError(session, .invalid_credentials, "Not found");
+    };
+
+    const challenge = session.auth.challenge orelse unreachable;
 
     print("INFO: [Auth] login request {s}:{X}\n", .{ username, hash });
 
-    if (account == null or !std.mem.eql(u8, &hash, &account.?.hash)) {
+    if (!std.mem.eql(u8, &hash, &getHmacMd5(account.hash, challenge))) {
         return try sendServerError(session, .invalid_credentials, "Not found");
     }
 
     const sm_key: [16]u8 = @splat(69);
-    session.account_id = account.?.id;
+    session.account_id = account.id;
 
     try session.enableDecryption(payload.username.slice(), payload.hash.value, sm_key);
 
@@ -100,14 +105,9 @@ fn handleKeyExchange(session: *Session, payload: KeyExchange) !void {
     try session.enableEncryption(session.auth.username.?, session.auth.hash.?, payload.key.value);
     try session.enableCompression();
 
-    var reply: Reply(SessionId) = .{};
-    try session.messages_tx.append(.{
-        .init_session = .{
-            .channel = session.updates_rx,
-            .reply = &reply,
-        },
+    const session_id = try session.tx.request(SessionId, .init_session, .{
+        .channel = session.rx,
     });
-    const session_id = try reply.await(session.io);
     session.id = session_id;
 
     const online_announce = OnlineAnnounce{
